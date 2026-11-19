@@ -1,0 +1,36 @@
+# Môi trường ảo Python
+.venv/
+venv/
+env/
+
+# Biến môi trường & khóa API bí mật
+.env
+.env.local
+
+# Tệp đệm Python & kiểm thử
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Cơ sở dữ liệu SQLite cục bộ
+*.db
+*.sqlite3
+
+# Tệp cấu hình IDE
+.vscode/
+.idea/
+
+# Tệp xuất tạm thời & tài liệu sinh tự động (chỉ giữ mã nguồn và docs/*.md)
+exports/
+outputs/
+*.docx
+*.pptx
+*.puml
+*.png
+
+# Tệp hệ thống
+.DS_Store
+Thumbs.db
