@@ -178,3 +178,34 @@ class RequirementAnalysisFacade:
         builder.set_requirements(self.current_requirements)
         builder.set_user_stories(self.current_user_stories)
         return builder.export_markdown()
+
+    def export_jira_csv(self, project_key: str = "PROJ") -> str:
+        """Xuất tệp CSV định dạng chuẩn Jira Issue Import."""
+        from src.integrations.jira_sync import JiraSync
+        return JiraSync.generate_import_csv(self.current_user_stories, project_key=project_key)
+
+    def export_github_json(self) -> str:
+        """Xuất danh sách User Stories định dạng JSON cho GitHub."""
+        from src.integrations.github_sync import GitHubIssueSync
+        return GitHubIssueSync.generate_export_json(self.current_user_stories)
+
+    def export_trello_json(self, board_name: Optional[str] = None) -> str:
+        """Xuất cấu trúc Trello Board dạng JSON."""
+        from src.integrations.trello_sync import TrelloSync
+        b_name = board_name or (self.current_project.project_name if self.current_project else "BA-Gen Backlog")
+        return TrelloSync.generate_board_json(self.current_user_stories, board_name=b_name)
+
+    def sync_to_github(self, repo: str, token: str) -> dict:
+        """Đồng bộ tạo GitHub Issues trực tiếp qua API."""
+        from src.integrations.github_sync import GitHubIssueSync
+        return GitHubIssueSync.sync_to_github_api(repo, token, self.current_user_stories)
+
+    def sync_to_jira(self, domain: str, email: str, token: str, project_key: str) -> dict:
+        """Đồng bộ tạo Jira Issues trực tiếp qua API."""
+        from src.integrations.jira_sync import JiraSync
+        return JiraSync.sync_to_jira_api(domain, email, token, project_key, self.current_user_stories)
+
+    def sync_to_trello(self, api_key: str, token: str, list_id: str) -> dict:
+        """Đồng bộ tạo Trello Cards trực tiếp qua API."""
+        from src.integrations.trello_sync import TrelloSync
+        return TrelloSync.sync_to_trello_api(api_key, token, list_id, self.current_user_stories)

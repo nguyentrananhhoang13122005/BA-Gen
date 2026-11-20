@@ -22,6 +22,7 @@ Trong quy trình Kỹ thuật Yêu cầu (*Requirements Engineering*), tài li�
 4. **Sinh Agile User Stories & Gherkin AC:** Tự động sinh User Story theo chuẩn `Role - Goal - Benefit` kèm tối thiểu **2 kịch bản nghiệm thu Gherkin** (`GIVEN / WHEN / THEN`) cho luồng thành công và luồng ngoại lệ/biên.
 5. **Xuất tài liệu SRS rút gọn & Sơ đồ Use Case:** Đóng gói tệp Word (`.docx`) và Markdown (`.md`) theo chuẩn **IEEE 830 / ISO 29148**, sinh mã PlantUML và kết xuất ảnh sơ đồ Use Case (`.png`/`.svg`) trực tiếp qua **Kroki API** (không cần cài Java hay Graphviz).
 6. **Đánh giá Kiểm chuẩn (Benchmark):** Đo lường Accuracy, Precision, Recall, Macro F1-Score và Confusion Matrix 2×2 trên bộ 35 câu yêu cầu chuẩn.
+7. **Đồng bộ sang Quản lý Dự án (Jira, GitHub Issues, Trello):** Hỗ trợ đẩy trực tiếp Agile User Stories và tiêu chí nghiệm thu Gherkin lên Jira Cloud, GitHub Issues và Trello Kanban Board qua REST API, hoặc xuất nhanh các tệp Import chuẩn hóa (Jira CSV, GitHub JSON, Trello JSON).
 
 ---
 
@@ -136,6 +137,7 @@ BA-Gen/
 │   ├── classifiers/               # LinearSVC, Multi-LLM client & Benchmark
 │   ├── analyzers/                 # Phát hiện từ mơ hồ & gợi ý viết lại SMART
 │   ├── generators/                # Sinh Agile User Stories & Gherkin AC
+│   ├── integrations/              # Tích hợp đồng bộ Jira Cloud, GitHub Issues & Trello
 │   ├── exporters/                 # Xuất SRS (.docx/.md) & Sơ đồ PlantUML (Kroki API)
 │   ├── ui/                        # Giao diện Streamlit (Sidebar & 4 Tabs Workbench)
 │   └── utils/                     # Singleton quản lý từ điển & hàm tiện ích

@@ -136,6 +136,101 @@ def render_workbench(facade: RequirementAnalysisFacade, result: AnalysisResultDT
                         language="gherkin"
                     )
 
+        st.markdown("---")
+        st.subheader("🚀 Đồng bộ sang Công cụ Quản lý Dự án (Jira / GitHub / Trello)")
+        st.caption("Hỗ trợ cả tải tệp cấu trúc Import nhanh lẫn đồng bộ trực tiếp qua REST API.")
+
+        sync_target = st.radio(
+            "Chọn nền tảng quản lý dự án mục tiêu:",
+            ["Atlassian Jira", "GitHub Issues", "Trello Kanban"],
+            horizontal=True
+        )
+
+        if sync_target == "Atlassian Jira":
+            c_j1, c_j2 = st.columns([1, 1])
+            with c_j1:
+                st.markdown("##### 📥 Xuất tệp Jira CSV Import")
+                jira_csv = facade.export_jira_csv()
+                st.download_button(
+                    "📥 Tải tệp Jira Import (.csv)",
+                    data=jira_csv,
+                    file_name=f"{result.project.project_name}_jira_stories.csv",
+                    mime="text/csv",
+                    help="Dùng tính năng 'Import Issues from CSV' trong Jira để nhập hàng loạt không cần cấp quyền API."
+                )
+            with c_j2:
+                st.markdown("##### ⚡ Đồng bộ qua Jira Cloud REST API")
+                j_domain = st.text_input("Jira Domain", placeholder="ten-cong-ty (hoặc ten-cong-ty.atlassian.net)")
+                j_email = st.text_input("Atlassian Email", placeholder="email@company.com")
+                j_token = st.text_input("Atlassian API Token", type="password")
+                j_key = st.text_input("Mã Dự án (Project Key)", value="PROJ", max_chars=10)
+                if st.button("Đẩy lên Jira Cloud", key="btn_sync_jira"):
+                    if not (j_domain and j_email and j_token and j_key):
+                        st.warning("Vui lòng điền đủ Domain, Email, API Token và Project Key.")
+                    else:
+                        with st.spinner("Đang đẩy User Stories lên Jira..."):
+                            res = facade.sync_to_jira(j_domain, j_email, j_token, j_key)
+                            if res["success_count"] > 0:
+                                st.success(f"✅ Đã tạo thành công {res['success_count']} User Stories trên Jira!")
+                            if res["errors"]:
+                                err_msg = res["errors"][0].get("error", "Lỗi không xác định")
+                                st.error(f"Gặp {len(res['errors'])} lỗi khi tạo. Chi tiết: {err_msg}")
+
+        elif sync_target == "GitHub Issues":
+            c_g1, c_g2 = st.columns([1, 1])
+            with c_g1:
+                st.markdown("##### 📥 Xuất tệp GitHub JSON")
+                gh_json = facade.export_github_json()
+                st.download_button(
+                    "📥 Tải tệp GitHub Issues (.json)",
+                    data=gh_json,
+                    file_name=f"{result.project.project_name}_github_issues.json",
+                    mime="application/json"
+                )
+            with c_g2:
+                st.markdown("##### ⚡ Đồng bộ qua GitHub REST API")
+                gh_repo = st.text_input("Repository (owner/repo)", placeholder="username/repository-name")
+                gh_token = st.text_input("GitHub Personal Access Token (PAT)", type="password", help="Yêu cầu quyền 'repo'")
+                if st.button("Đẩy lên GitHub Issues", key="btn_sync_github"):
+                    if not (gh_repo and gh_token):
+                        st.warning("Vui lòng nhập tên Repository và Personal Access Token.")
+                    else:
+                        with st.spinner("Đang tạo Issues trên GitHub..."):
+                            res = facade.sync_to_github(gh_repo, gh_token)
+                            if res["success_count"] > 0:
+                                st.success(f"✅ Đã tạo thành công {res['success_count']} Issues trên GitHub!")
+                            if res["errors"]:
+                                err_msg = res["errors"][0].get("error", "Lỗi kết nối")
+                                st.error(f"Gặp {len(res['errors'])} lỗi: {err_msg}")
+
+        elif sync_target == "Trello Kanban":
+            c_t1, c_t2 = st.columns([1, 1])
+            with c_t1:
+                st.markdown("##### 📥 Xuất tệp Trello Board JSON")
+                trello_json = facade.export_trello_json()
+                st.download_button(
+                    "📥 Tải tệp Trello Board (.json)",
+                    data=trello_json,
+                    file_name=f"{result.project.project_name}_trello_board.json",
+                    mime="application/json"
+                )
+            with c_t2:
+                st.markdown("##### ⚡ Đồng bộ qua Trello REST API")
+                t_key = st.text_input("Trello API Key")
+                t_token = st.text_input("Trello Token", type="password")
+                t_list = st.text_input("Trello List ID (Cột Product Backlog ID)")
+                if st.button("Đẩy lên Trello Board", key="btn_sync_trello"):
+                    if not (t_key and t_token and t_list):
+                        st.warning("Vui lòng điền đủ Trello API Key, Token và List ID.")
+                    else:
+                        with st.spinner("Đang tạo Cards trên Trello..."):
+                            res = facade.sync_to_trello(t_key, t_token, t_list)
+                            if res["success_count"] > 0:
+                                st.success(f"✅ Đã tạo thành công {res['success_count']} Cards trên Trello!")
+                            if res["errors"]:
+                                err_msg = res["errors"][0].get("error", "Lỗi kết nối")
+                                st.error(f"Gặp {len(res['errors'])} lỗi: {err_msg}")
+
     # ==========================================
     # TAB 3: TÀI LIỆU SRS & SƠ ĐỒ USE CASE
     # ==========================================
