@@ -27,17 +27,26 @@ class RequirementAnalysisFacade:
         db_manager: Optional[DatabaseManager] = None,
         confidence_threshold: float = 0.75,
         force_llm_mode: bool = False,
+        strict_llm: bool = False,
     ):
         self.llm_client = llm_client or MultiLLMClient()
         self.db = db_manager or DatabaseManager()
+        self.strict_llm = strict_llm
         self.classifier = HybridClassifierStrategy(
             llm_client=self.llm_client,
             db_manager=self.db,
             confidence_threshold=confidence_threshold,
             force_llm_mode=force_llm_mode,
+            strict_llm=strict_llm,
         )
-        self.ambiguity_detector = AmbiguityDetector(llm_client=self.llm_client)
-        self.user_story_gen = UserStoryGenerator(llm_client=self.llm_client)
+        self.ambiguity_detector = AmbiguityDetector(
+            llm_client=self.llm_client,
+            strict_llm=strict_llm,
+        )
+        self.user_story_gen = UserStoryGenerator(
+            llm_client=self.llm_client,
+            strict_llm=strict_llm,
+        )
         self.plantuml_exporter = PlantUMLExporter()
 
         # Dữ liệu phiên hiện tại

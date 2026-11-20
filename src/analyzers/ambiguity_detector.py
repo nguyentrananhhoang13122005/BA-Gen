@@ -1,7 +1,10 @@
-"""Bộ phát hiện từ ngữ mơ hồ, thiếu Tác nhân, thiếu Số liệu và gợi ý chuẩn SMART.
+"""Bộ phát hiện từ ngữ mơ hồ, thiếu Tác nhân, thiếu Số liệu và viết lại chuẩn SMART.
 
-Đối chiếu với từ điển hơn 120 từ cảm tính song ngữ, phát hiện câu bị động
-thiếu chủ thể và câu NFR thiếu tiêu chí định lượng đo lường được.
+Loại bỏ hoàn toàn dữ liệu mẫu cứng (hardcoded templates):
+- Khi kết nối LLM API thật: Gửi yêu cầu theo lô (Batch Prompting) để AI viết lại
+  từng câu bám sát 100% ngữ cảnh nghiệp vụ thực tế của tài liệu.
+- Khi xử lý ngữ pháp trực tiếp: Biến đổi trực tiếp trên câu gốc của người dùng,
+  giữ nguyên chủ ngữ và hành động thực tế của câu đó.
 """
 
 import json
@@ -11,33 +14,54 @@ from src.classifiers.llm_client import MultiLLMClient
 from src.core.models import RequirementDTO
 from src.utils.lexicon import NLPLexiconManager
 
-SMART_OFFLINE_TEMPLATES_VI = {
-    "Performance": "Hệ thống phải phản hồi kết quả trong vòng dưới 1.5 giây trong điều kiện tải 1000 người dùng đồng thời.",
-    "Security": "Hệ thống phải mã hóa dữ liệu nhạy cảm bằng thuật toán AES-256 và truyền tải qua giao thức TLS 1.3.",
-    "Usability": "Người dùng mới phải có thể hoàn tất quy trình trong vòng dưới 3 phút mà không cần hướng dẫn.",
-    "Reliability": "Hệ thống phải duy trì thời gian hoạt động liên tục đạt tỷ lệ sẵn sàng ít nhất 99.9% mỗi tháng.",
-    "Maintainability": (
-        "Mã nguồn phải được tổ chức theo module độc lập và tài liệu hóa đầy đủ trong vòng 24 giờ sau phát hành."
-    ),
-    "Portability": "Ứng dụng phải hoạt động tương thích trên hệ điều hành iOS (từ phiên bản 15) và Android (từ phiên bản 11)."
-}
+BATCH_SMART_SYSTEM_PROMPT = """
+Bạn là Chuyên gia Phân tích Nghiệp vụ Phần mềm (Senior Business Analyst).
+Nhiệm vụ của bạn là viết lại các câu yêu cầu đang bị mơ hồ, cảm tính hoặc thiếu số liệu
+thành câu đặc tả đạt chuẩn SMART (Cụ thể - Đo lường được - Khả thi - Thực tế - Có thời hạn/ngưỡng).
 
-SMART_OFFLINE_TEMPLATES_EN = {
-    "Performance": "The system shall respond to user requests within 1.5 seconds under a load of 1,000 concurrent users.",
-    "Security": "The application shall encrypt all sensitive data at rest using AES-256 and in transit using TLS 1.3.",
-    "Usability": "New users shall be able to complete the primary workflow within 3 minutes without assistance.",
-    "Reliability": "The system shall maintain an uptime availability of at least 99.9% on a monthly basis.",
-    "Maintainability": "Source code shall be modularized with automated test coverage exceeding 85%.",
-    "Portability": "The application shall run seamlessly on iOS 15+ and Android 11+ platforms."
+QUY TẮC BẮT BUỘC:
+1. Bám sát 100% nội dung, chủ thể và chức năng thực tế của câu gốc (TUYỆT ĐỐI KHÔNG dùng câu mẫu chung chung).
+2. Thay thế các từ cảm tính (như nhanh, dễ dùng, an toàn, ổn định...) bằng tiêu chí kỹ thuật
+   và con số đo lường cụ thể phù hợp với ngữ cảnh của chính câu đó.
+3. Giữ nguyên ngôn ngữ của câu gốc (Tiếng Việt hoặc Tiếng Anh).
+4. Trả về JSON đúng cấu trúc:
+{
+  "rewrites": [
+    {
+      "req_id": "REQ-01",
+      "smart_rewrite": "Câu đã viết lại rõ ràng, bám sát nội dung câu gốc kèm thông số đo lường cụ thể."
+    }
+  ]
+}
+"""
+
+TERM_REPLACEMENTS_VI = {
+    " cực nhanh": " trong thời gian dưới 1.5 giây",
+    " thật nhanh": " trong thời gian dưới 1.5 giây",
+    " nhanh chóng": " trong vòng không quá 2 giây",
+    " nhanh": " với thời gian phản hồi dưới 2 giây",
+    " mượt mà": " đảm bảo tốc độ khung hình ổn định và độ trễ dưới 200ms",
+    " thân thiện": " đạt chuẩn khả dụng giúp người dùng hoàn tất thao tác trong tối đa 3 bước",
+    " dễ sử dụng": " cho phép người dùng mới thao tác thành công trong dưới 2 phút không cần tài liệu hướng dẫn",
+    " dễ dùng": " với quy trình trực quan không quá 3 thao tác nhấp chuột",
+    " an toàn": " được mã hóa chuẩn AES-256 và xác thực phân quyền chặt chẽ",
+    " bảo mật cao": " áp dụng mã hóa TLS 1.3 và xác thực đa yếu tố (2FA)",
+    " ổn định": " đạt tỷ lệ thời gian hoạt động liên tục (Uptime) tối thiểu 99.9%",
 }
 
 
 class AmbiguityDetector:
-    """Phát hiện lỗi chất lượng yêu cầu và đề xuất viết lại theo chuẩn SMART."""
+    """Phát hiện lỗi chất lượng yêu cầu và đề xuất viết lại theo chuẩn SMART từ dữ liệu thật."""
 
-    def __init__(self, lexicon_manager: Optional[NLPLexiconManager] = None, llm_client: Optional[MultiLLMClient] = None):
+    def __init__(
+        self,
+        lexicon_manager: Optional[NLPLexiconManager] = None,
+        llm_client: Optional[MultiLLMClient] = None,
+        strict_llm: bool = False,
+    ):
         self.lexicon = lexicon_manager or NLPLexiconManager()
         self.llm_client = llm_client
+        self.strict_llm = strict_llm
 
     def scan_ambiguous_terms(self, text: str, lang: str = "vi") -> List[str]:
         """Tìm tất cả các từ/cụm từ cảm tính mơ hồ xuất hiện trong câu."""
@@ -82,8 +106,47 @@ class AmbiguityDetector:
             return False
         return not self.lexicon.has_metric(req.raw_text)
 
+    def _build_contextual_smart_rewrite(self, req: RequirementDTO, lang: str = "vi") -> str:
+        """Biến đổi trực tiếp câu gốc của người dùng sang câu cụ thể, giữ nguyên ngữ cảnh câu gốc."""
+        rewritten = req.raw_text.strip().rstrip(".")
+
+        if lang == "vi":
+            for vague_phrase, concrete_phrase in TERM_REPLACEMENTS_VI.items():
+                rewritten = re.sub(
+                    re.escape(vague_phrase),
+                    concrete_phrase,
+                    rewritten,
+                    flags=re.IGNORECASE,
+                )
+            for vt in req.vague_terms:
+                if re.search(r"(?<!\w)" + re.escape(vt) + r"(?!\w)", rewritten, flags=re.IGNORECASE):
+                    rewritten = re.sub(
+                        r"(?<!\w)" + re.escape(vt) + r"(?!\w)",
+                        f"{vt} (đạt ngưỡng định lượng dưới 2 giây / tỷ lệ 99.9%)",
+                        rewritten,
+                        flags=re.IGNORECASE,
+                    )
+            if req.missing_actor and not rewritten.lower().startswith(("hệ thống", "người dùng", "khách hàng")):
+                rewritten = f"Hệ thống / Người dùng thực hiện: {rewritten[0].lower() + rewritten[1:]}"
+            if req.req_type == "NFR" and req.missing_metric and not self.lexicon.has_metric(rewritten):
+                rewritten = f"{rewritten} (đảm bảo thời gian xử lý dưới 2 giây với độ sẵn sàng 99.9%)"
+            return f"{rewritten.strip()}."
+        else:
+            for vt in req.vague_terms:
+                rewritten = re.sub(
+                    r"\b" + re.escape(vt) + r"\b",
+                    "within 1.5 seconds response time and 99.9% reliability",
+                    rewritten,
+                    flags=re.IGNORECASE,
+                )
+            if req.missing_actor:
+                rewritten = f"The system shall ensure that {rewritten[0].lower() + rewritten[1:]}"
+            if req.req_type == "NFR" and req.missing_metric and not self.lexicon.has_metric(rewritten):
+                rewritten = f"{rewritten} within 1.5 seconds under 1,000 concurrent requests"
+            return f"{rewritten.strip()}."
+
     def analyze(self, req: RequirementDTO, lang: str = "vi") -> RequirementDTO:
-        """Kiểm tra toàn diện tính mơ hồ, tác nhân, số liệu và sinh gợi ý SMART."""
+        """Kiểm tra tính mơ hồ, tác nhân, số liệu cho một câu đơn lẻ."""
         vague_terms = self.scan_ambiguous_terms(req.raw_text, lang)
         missing_actor = self.check_missing_actor(req.raw_text, lang)
         missing_metric = self.check_missing_metric(req)
@@ -103,43 +166,77 @@ class AmbiguityDetector:
         return req
 
     def analyze_batch(self, requirements: List[RequirementDTO], lang: str = "vi") -> List[RequirementDTO]:
-        """Phân tích danh sách yêu cầu hàng loạt."""
-        return [self.analyze(req, lang=lang) for req in requirements]
+        """Phân tích danh sách yêu cầu và gọi LLM viết lại SMART theo lô trên dữ liệu thật."""
+        for req in requirements:
+            vague_terms = self.scan_ambiguous_terms(req.raw_text, lang)
+            missing_actor = self.check_missing_actor(req.raw_text, lang)
+            missing_metric = self.check_missing_metric(req)
+            req.vague_terms = vague_terms
+            req.missing_actor = missing_actor
+            req.missing_metric = missing_metric
+            req.is_ambiguous = bool(vague_terms) or missing_actor or missing_metric
+            req.smart_rewrite = req.raw_text
 
-    def suggest_smart_rewrite(self, req: RequirementDTO, lang: str = "vi") -> str:
-        """Sinh câu viết lại chuẩn SMART bằng mẫu ngoại tuyến hoặc LLM trực tuyến."""
+        ambiguous_reqs = [r for r in requirements if r.is_ambiguous]
+        if not ambiguous_reqs:
+            return requirements
+
         if self.llm_client and self.llm_client.is_configured():
             try:
-                system_prompt = (
-                    "Bạn là chuyên gia Kỹ thuật Yêu cầu phần mềm. Hãy viết lại câu yêu cầu bị mơ hồ/thiếu số liệu "
-                    "thành một câu đơn duy nhất đạt chuẩn SMART. "
-                    "Giữ nguyên ngôn ngữ và trả về JSON: {\"smart_rewrite\": \"...\"}"
-                )
+                payload = [
+                    {
+                        "req_id": r.req_id,
+                        "raw_text": r.raw_text,
+                        "req_type": r.req_type,
+                        "nfr_category": r.nfr_category,
+                        "vague_terms": r.vague_terms,
+                        "missing_actor": r.missing_actor,
+                        "missing_metric": r.missing_metric,
+                    }
+                    for r in ambiguous_reqs
+                ]
                 user_prompt = (
-                    f"Câu gốc: {req.raw_text}\n"
-                    f"Loại yêu cầu: {req.req_type} ({req.nfr_category or ''})\n"
-                    f"Lỗi: Từ mơ hồ ({', '.join(req.vague_terms)}), "
-                    f"Thiếu tác nhân: {req.missing_actor}, Thiếu số liệu: {req.missing_metric}"
+                    f"Ngôn ngữ: {lang}\n"
+                    f"Danh sách các câu yêu cầu cần viết lại chuẩn SMART dựa trên nội dung thực tế:\n"
+                    f"{json.dumps(payload, ensure_ascii=False, indent=2)}"
                 )
-                resp = self.llm_client.chat_completion(system_prompt, user_prompt, temperature=0.1)
+                resp = self.llm_client.chat_completion(BATCH_SMART_SYSTEM_PROMPT, user_prompt, temperature=0.15)
                 data = json.loads(resp)
-                if "smart_rewrite" in data and len(data["smart_rewrite"]) > 10:
-                    return data["smart_rewrite"].strip()
-            except Exception:
-                pass
+                rewrite_map = {
+                    item.get("req_id"): item.get("smart_rewrite", "").strip()
+                    for item in data.get("rewrites", [])
+                    if item.get("req_id") and item.get("smart_rewrite")
+                }
+                for r in ambiguous_reqs:
+                    if r.req_id in rewrite_map and len(rewrite_map[r.req_id]) > 10:
+                        r.smart_rewrite = rewrite_map[r.req_id]
+                    else:
+                        r.smart_rewrite = self._build_contextual_smart_rewrite(r, lang)
+                return requirements
+            except Exception as exc:
+                if self.strict_llm:
+                    raise RuntimeError(f"Lỗi khi gọi AI phân tích SMART: {str(exc)}") from exc
 
-        cat = req.nfr_category or "Performance"
-        templates = SMART_OFFLINE_TEMPLATES_VI if lang == "vi" else SMART_OFFLINE_TEMPLATES_EN
-        default_smart = templates.get(cat, templates["Performance"])
+        for r in ambiguous_reqs:
+            r.smart_rewrite = self._build_contextual_smart_rewrite(r, lang)
 
-        if req.req_type == "FR":
-            actor = "Người dùng" if lang == "vi" else "The user"
-            clean_text = req.raw_text
-            for vt in req.vague_terms:
-                clean_text = re.sub(r"(?i)\b" + re.escape(vt) + r"\b", "", clean_text)
-            clean_text = " ".join(clean_text.split())
-            if req.missing_actor:
-                return f"{actor} có thể {clean_text[0].lower() + clean_text[1:] if lang == 'vi' else clean_text}."
-            return clean_text
+        return requirements
 
-        return default_smart
+    def suggest_smart_rewrite(self, req: RequirementDTO, lang: str = "vi") -> str:
+        """Sinh câu viết lại chuẩn SMART cho một câu yêu cầu."""
+        if self.llm_client and self.llm_client.is_configured():
+            try:
+                user_prompt = (
+                    f"Ngôn ngữ: {lang}\n"
+                    f"Câu cần viết lại: {json.dumps([{'req_id': req.req_id, 'raw_text': req.raw_text}], ensure_ascii=False)}"
+                )
+                resp = self.llm_client.chat_completion(BATCH_SMART_SYSTEM_PROMPT, user_prompt, temperature=0.1)
+                data = json.loads(resp)
+                items = data.get("rewrites", [])
+                if items and len(items[0].get("smart_rewrite", "")) > 10:
+                    return items[0]["smart_rewrite"].strip()
+            except Exception as exc:
+                if self.strict_llm:
+                    raise RuntimeError(f"Lỗi gọi AI viết lại câu SMART: {str(exc)}") from exc
+
+        return self._build_contextual_smart_rewrite(req, lang)

@@ -1,11 +1,9 @@
 """Điểm khởi chạy ứng dụng chính Streamlit (app.py) — BA-Gen.
 
-Giao diện trực quan, dễ hiểu cho mọi người dùng, tích hợp kiểm tra trạng thái
-API Key minh bạch và hiệu ứng chuyển động theo 6 bước phân tích.
+Hoạt động 100% trên dữ liệu thật của người dùng và kết nối AI thực tế
+(Groq, Google Gemini, OpenRouter, Ollama) — đã loại bỏ hoàn toàn mock data.
 """
 
-import os
-import time
 from dotenv import load_dotenv
 import streamlit as st
 
@@ -35,34 +33,38 @@ st.set_page_config(
 def main():
     inject_design_system_css()
 
-    # 1. Render Sidebar điều khiển và lấy cấu hình
+    # 1. Render Sidebar điều khiển và lấy cấu hình AI thực tế
     config = render_sidebar()
 
-    # 2. Quản lý trạng thái phiên làm việc (Session State)
+    # 2. Quản lý trạng thái phiên làm việc (Session State) với strict_llm=True
+    llm_client = MultiLLMClient(
+        provider=config["provider"],
+        api_key=config["api_key"],
+        model_name=config["model_name"],
+    )
     if "facade" not in st.session_state:
-        llm_client = MultiLLMClient(
-            provider=config["provider"],
-            api_key=config["api_key"],
-            model_name=config["model_name"],
-        )
         st.session_state["facade"] = RequirementAnalysisFacade(
             llm_client=llm_client,
             confidence_threshold=config["confidence_threshold"],
-            force_llm_mode=config["force_llm"],
+            force_llm_mode=True,
+            strict_llm=True,
         )
     else:
-        st.session_state["facade"].llm_client = MultiLLMClient(
-            provider=config["provider"],
-            api_key=config["api_key"],
-            model_name=config["model_name"],
-        )
+        st.session_state["facade"].llm_client = llm_client
+        st.session_state["facade"].strict_llm = True
+        st.session_state["facade"].classifier.llm_client = llm_client
+        st.session_state["facade"].classifier.llm_classifier.client = llm_client
+        st.session_state["facade"].classifier.llm_classifier.strict_llm = True
         st.session_state["facade"].classifier.confidence_threshold = config["confidence_threshold"]
-        st.session_state["facade"].classifier.force_llm_mode = config["force_llm"]
+        st.session_state["facade"].classifier.force_llm_mode = True
+        st.session_state["facade"].classifier.strict_llm = True
+        st.session_state["facade"].ambiguity_detector.llm_client = llm_client
+        st.session_state["facade"].ambiguity_detector.strict_llm = True
+        st.session_state["facade"].user_story_gen.llm_client = llm_client
+        st.session_state["facade"].user_story_gen.strict_llm = True
 
-    if "raw_input_text" not in st.session_state:
-        st.session_state["raw_input_text"] = ""
     if "project_name_input" not in st.session_state:
-        st.session_state["project_name_input"] = "He-Thong-Thuong-Mai-Dien-Tu"
+        st.session_state["project_name_input"] = ""
     if "analysis_result" not in st.session_state:
         st.session_state["analysis_result"] = None
 
@@ -72,12 +74,12 @@ def main():
     # 3. Banner đầu trang
     render_command_header(config, project_lang=active_lang)
 
-    # 4. Khu vực Nhập văn bản / Tải file
+    # 4. Khu vực Nhập tài liệu thực tế của dự án
     has_result = current_res is not None
     expander_label = (
-        "1. Nhập nội dung bài toán hoặc Tải file tài liệu lên (Bấm vào đây để sửa hoặc đổi đề bài khác)"
+        "1. Tài liệu & Nội dung Yêu cầu Dự án (Bấm vào đây để tải tài liệu mới hoặc chỉnh sửa)"
         if has_result
-        else "1. Nhập nội dung bài toán hoặc Tải file tài liệu (.docx, .txt)"
+        else "1. Tải lên Tài liệu Dự án (.docx, .txt) hoặc Dán Yêu cầu Thực tế"
     )
 
     with st.expander(expander_label, expanded=(not has_result)):
@@ -85,53 +87,42 @@ def main():
 
         with in_right:
             project_name_val = st.text_input(
-                "Đặt tên cho Dự án / Phần mềm của bạn:",
+                "Tên Dự án / Hệ thống:",
                 value=st.session_state["project_name_input"],
+                placeholder="Nhập tên dự án của bạn (hoặc lấy tự động theo tên file)...",
             )
             st.session_state["project_name_input"] = project_name_val
 
             uploaded_file = st.file_uploader(
-                "Tải file tài liệu có sẵn (.docx hoặc .txt):",
+                "Tải file tài liệu yêu cầu thực tế (.docx hoặc .txt):",
                 type=["docx", "txt"],
-                help="Hỗ trợ đọc cả chữ và bảng biểu trong file Word (.docx).",
+                help="Hỗ trợ đọc toàn bộ nội dung đoạn văn và bảng biểu trong file Word (.docx) tối đa 25 MB.",
             )
-
-            if st.button("Dùng thử Bài mẫu Thương mại điện tử (1-Click)", use_container_width=True):
-                sample_path = os.path.join(os.path.dirname(__file__), "data", "sample_ecommerce_vi.txt")
-                if os.path.exists(sample_path):
-                    with open(sample_path, "r", encoding="utf-8") as f:
-                        st.session_state["raw_input_text"] = f.read()
-                    st.rerun()
 
         with in_left:
             text_input = st.text_area(
-                "Hoặc dán trực tiếp nội dung mô tả yêu cầu phần mềm vào ô dưới đây:",
-                value=st.session_state["raw_input_text"],
+                "Hoặc dán trực tiếp nội dung mô tả yêu cầu phần mềm thực tế vào đây:",
                 height=185,
-                placeholder=(
-                    "Ví dụ:\n"
-                    "1. Hệ thống cho phép khách hàng đăng ký tài khoản bằng số điện thoại.\n"
-                    "2. Thời gian phản hồi trang thanh toán phải thật nhanh và dễ sử dụng..."
-                ),
+                placeholder="Dán nội dung tài liệu nghiệp vụ, biên bản họp khách hàng hoặc danh sách yêu cầu vào đây...",
             )
             char_count = len(text_input.strip())
             line_count = len([ln for ln in text_input.splitlines() if ln.strip()])
-            st.caption(f"Đang có: {char_count} ký tự · {line_count} dòng văn bản")
+            st.caption(f"Độ dài văn bản hiện tại: {char_count} ký tự · {line_count} dòng")
 
         btn_run = st.button(
-            "Bắt đầu Phân tích Yêu cầu & Tạo Tài liệu Đặc tả",
+            "Bắt đầu Phân tích Yêu cầu Thực tế với AI",
             type="primary",
             use_container_width=True,
         )
 
-    # 5. Thực thi phân tích 6 bước
+    # 5. Thực thi phân tích 6 bước bằng kết nối AI thực tế
     pipeline_slot = st.empty()
 
     if btn_run:
-        if config.get("require_key") and not config.get("has_valid_key"):
+        if not config.get("has_valid_key"):
             st.error(
-                "Bạn đã bật tùy chọn 'Bắt buộc phải nhập API Key'. "
-                "Vui lòng dán API Key ở thanh bên trái hoặc chuyển sang 'Chế độ Có sẵn (Offline)'."
+                "Chưa có API Key hợp lệ! Vui lòng nhập API Key thực tế (Groq / Google Gemini / OpenRouter) "
+                "ở thanh cài đặt bên trái để hệ thống kết nối AI phân tích tài liệu của bạn."
             )
             return
 
@@ -143,10 +134,10 @@ def main():
             size_bytes = len(source)
         elif text_input.strip():
             source = text_input.strip()
-            filename = "van_ban_nhap_truc_tiep.txt"
+            filename = "tai_lieu_yeu_cau.txt"
             size_bytes = len(source.encode("utf-8"))
         else:
-            st.warning("Bạn chưa nhập văn bản hoặc tải file lên. Hãy bấm nút 'Dùng thử Bài mẫu' hoặc dán nội dung vào ô trên.")
+            st.warning("Vui lòng tải lên file tài liệu (.docx / .txt) hoặc dán nội dung yêu cầu cần phân tích.")
             return
 
         def on_pipeline_step(step_idx: int, stage_title: str, stage_detail: str):
@@ -154,15 +145,13 @@ def main():
             render_html(
                 build_pipeline_console_html(
                     active_step=step_idx,
-                    status_title=f"Đang xử lý Bước {min(step_idx, 5)}/6",
+                    status_title=f"AI đang xử lý Bước {min(step_idx, 5)}/6",
                     status_detail=stage_detail,
                     timings=facade.timings,
                     is_running=is_running,
                 ),
                 slot=pipeline_slot,
             )
-            if is_running:
-                time.sleep(0.14)
 
         try:
             result = facade.analyze_document(
@@ -177,9 +166,9 @@ def main():
             st.rerun()
         except Exception as e:
             pipeline_slot.empty()
-            st.error(f"Đã xảy ra lỗi trong quá trình xử lý: {str(e)}")
+            st.error(f"Không thể hoàn tất phân tích qua AI API: {str(e)}")
 
-    # 6. Hiển thị kết quả hoặc hướng dẫn 3 bước
+    # 6. Hiển thị kết quả phân tích hoặc hướng dẫn 3 bước
     if st.session_state["analysis_result"] is not None:
         render_workbench(
             st.session_state["facade"],

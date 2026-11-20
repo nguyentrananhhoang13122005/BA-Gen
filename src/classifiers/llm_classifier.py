@@ -50,9 +50,15 @@ BẠN BẮT BUỘC PHẢI TRẢ VỀ ĐÚNG ĐỊNH DẠNG JSON NHƯ SAU:
 class LLMClassifierStrategy(IClassifierStrategy):
     """Chiến lược phân loại FR/NFR sử dụng LLM theo lô (Batching)."""
 
-    def __init__(self, llm_client: Optional[MultiLLMClient] = None, batch_size: int = 12):
+    def __init__(
+        self,
+        llm_client: Optional[MultiLLMClient] = None,
+        batch_size: int = 12,
+        strict_llm: bool = False,
+    ):
         self.client = llm_client or MultiLLMClient()
         self.batch_size = batch_size
+        self.strict_llm = strict_llm
 
     def classify(self, sentences: List[str], lang: str = "vi") -> List[RequirementDTO]:
         results: List[RequirementDTO] = []
@@ -101,7 +107,9 @@ class LLMClassifierStrategy(IClassifierStrategy):
                         confidence=conf
                     ))
 
-            except Exception:
+            except Exception as exc:
+                if self.strict_llm:
+                    raise RuntimeError(f"Lỗi khi gọi AI phân loại yêu cầu: {str(exc)}") from exc
                 for idx, sentence in enumerate(chunk):
                     global_idx = i + idx + 1
                     results.append(RequirementDTO(

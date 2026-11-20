@@ -23,13 +23,15 @@ class HybridClassifierStrategy(IClassifierStrategy):
         db_manager: Optional[DatabaseManager] = None,
         confidence_threshold: float = 0.75,
         force_llm_mode: bool = False,
+        strict_llm: bool = False,
     ):
         self.llm_client = llm_client or MultiLLMClient()
         self.ml_classifier = OfflineMLClassifierStrategy()
-        self.llm_classifier = LLMClassifierStrategy(llm_client=self.llm_client)
+        self.llm_classifier = LLMClassifierStrategy(llm_client=self.llm_client, strict_llm=strict_llm)
         self.db = db_manager or DatabaseManager()
         self.confidence_threshold = confidence_threshold
         self.force_llm_mode = force_llm_mode
+        self.strict_llm = strict_llm
 
     def classify(self, sentences: List[str], lang: str = "vi") -> List[RequirementDTO]:
         if not sentences:
@@ -96,7 +98,9 @@ class HybridClassifierStrategy(IClassifierStrategy):
                             "confidence": llm_pred.confidence
                         }
                     )
-            except Exception:
+            except Exception as exc:
+                if self.strict_llm:
+                    raise RuntimeError(f"Lỗi kết nối API AI ({self.llm_client.provider}): {str(exc)}") from exc
                 # Kích hoạt Circuit-Breaker: giữ kết quả của LinearSVC nếu LLM lỗi mạng/quota
                 for orig_idx, ml_pred in zip(uncertain_indices, ml_predictions):
                     if results[orig_idx] is None:

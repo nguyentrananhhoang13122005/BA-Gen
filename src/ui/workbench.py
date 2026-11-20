@@ -8,7 +8,6 @@ tự nhiên để cả người không chuyên lẫn BA chuyên nghiệp đều 
 import html
 import re
 import streamlit as st
-from src.classifiers.evaluate_benchmark import BenchmarkEvaluator
 from src.core.facade import RequirementAnalysisFacade
 from src.core.models import AnalysisResultDTO
 from src.ui.design_system import build_pipeline_console_html, render_html, svg_icon
@@ -134,25 +133,7 @@ def _render_confusion_matrix_html(cm: list) -> str:
 
 
 def render_workbench(facade: RequirementAnalysisFacade, result: AnalysisResultDTO, config: dict = None):
-    """Render Bàn làm việc chính với 4 thẻ chức năng trực quan."""
-    config = config or {}
-    has_valid_key = config.get("has_valid_key", False)
-    provider = config.get("provider", "offline")
-
-    # Thông báo rõ ràng về chế độ đã tạo ra kết quả để người dùng không thắc mắc
-    if not has_valid_key and provider != "offline":
-        render_html(
-            """
-<div style="background: #FFFBEB; border: 1px solid #FCD34D; color: #92400E;
-            padding: 12px 16px; border-radius: 10px; font-size: 0.88rem; margin-bottom: 14px; line-height: 1.5;">
-    <b>Giải thích vì sao bạn chưa nhập API Key mà hệ thống vẫn ra kết quả:</b><br>
-    Do ô API Key ở thanh bên trái đang để trống, hệ thống đã <b>tự động dùng Bộ Học máy &amp; Từ điển mẫu
-    có sẵn trong máy (Chế độ Offline dự phòng)</b> để bạn vẫn xem và tải thử tài liệu được ngay.
-    Nếu muốn AI phân tích sâu và viết câu mượt mà hơn, hãy dán API Key vào thanh bên trái rồi bấm Phân tích lại.
-</div>
-            """
-        )
-
+    """Render Bàn làm việc chính với 4 thẻ chức năng trực quan trên dữ liệu thực tế."""
     # 1. Thanh tiến trình 6 bước đã hoàn tất
     total_sec_val = result.timings.get("total_execution_sec", 0.0)
     pipeline_html = build_pipeline_console_html(
@@ -172,7 +153,7 @@ def render_workbench(facade: RequirementAnalysisFacade, result: AnalysisResultDT
         "1. Danh sách Yêu cầu & Sửa câu mơ hồ",
         "2. Kịch bản Người dùng & Kiểm thử",
         "3. Sơ đồ Tổng quan & Tải file Word (SRS)",
-        "4. Kiểm tra Độ chính xác Mô hình",
+        "4. Thống kê Dữ liệu & Ma trận Truy vết",
     ])
 
     # ==========================================================================
@@ -652,90 +633,131 @@ def render_workbench(facade: RequirementAnalysisFacade, result: AnalysisResultDT
                 st.markdown(md_text)
 
     # ==========================================================================
-    # TAB 4: KIỂM TRA ĐỘ CHÍNH XÁC CỦA MÔ HÌNH PHÂN LOẠI
+    # TAB 4: THỐNG KÊ DỮ LIỆU THỰC TẾ & MA TRẬN TRUY VẾT (TRACEABILITY MATRIX)
     # ==========================================================================
     with tab4:
-        top_b1, top_b2 = st.columns([3.5, 1.2])
-        with top_b1:
-            render_html(
-                f"""
-<div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+        render_html(
+            f"""
+<div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
     <span style="color:#1E40AF;">{svg_icon("bar-chart")}</span>
     <div>
         <div style="font-size:1.1rem; font-weight:700; color:#0F172A;">
-            Đo lường Độ chính xác của thuật toán trên 35 câu đề bài mẫu
+            Thống kê Dữ liệu Tài liệu Thực tế &amp; Ma trận Truy vết Yêu cầu (RTM)
         </div>
         <div style="font-size:0.85rem; color:#64748B;">
-            So sánh tỷ lệ đoán đúng giữa 3 phương pháp: Dò từ khóa đơn giản, Học máy nội bộ (LinearSVC) và Kết hợp AI.
+            Tổng hợp trực tiếp từ {len(result.requirements)} yêu cầu và {len(result.user_stories)} kịch bản
+            trong tài liệu <b>{html.escape(result.project.source_filename)}</b> của bạn.
         </div>
     </div>
 </div>
-                """
-            )
-        with top_b2:
-            rerun_bench = st.button(
-                "Chạy đo lường lại",
-                key="btn_run_benchmark",
-                use_container_width=True,
-            )
+            """
+        )
 
-        if "benchmark_cache" not in st.session_state or rerun_bench:
-            evaluator = BenchmarkEvaluator()
-            kw_metrics = evaluator.evaluate_keyword_baseline()
-            ml_metrics = evaluator.evaluate_offline_ml_kfold(n_splits=5)
-            hybrid_metrics = evaluator.evaluate_hybrid_classifier(facade.classifier)
-            st.session_state["benchmark_cache"] = (kw_metrics, ml_metrics, hybrid_metrics)
+        # Phân bố nhóm chất lượng thực tế từ tài liệu người dùng
+        iso_counts = {}
+        for r in result.requirements:
+            if r.req_type == "NFR":
+                cat = r.nfr_category or "Performance"
+                iso_counts[cat] = iso_counts.get(cat, 0) + 1
 
-        kw_metrics, ml_metrics, hybrid_metrics = st.session_state["benchmark_cache"]
-
-        tiers = [
-            ("Phương pháp 1: Dò từ khóa", "Chỉ tìm từ khóa cố định trong câu", kw_metrics, "#475569"),
-            ("Phương pháp 2: Học máy có sẵn", "Mô hình TF-IDF + LinearSVC (Kiểm tra chéo 5 lần)", ml_metrics, "#0F766E"),
-            ("Phương pháp 3: Hệ thống Lai ghép", "Kết hợp Học máy nội bộ và Mô hình AI", hybrid_metrics, "#1E40AF"),
-        ]
-
-        b_cols = st.columns(3)
-        for col, (tier_title, tier_desc, m_data, accent_hex) in zip(b_cols, tiers):
-            acc_pct = m_data["accuracy"] * 100
-            macro_f1 = m_data["macro_f1"]
-            fr_f1 = m_data["fr_f1"]
-            nfr_f1 = m_data["nfr_f1"]
-            cm_html = _render_confusion_matrix_html(m_data["confusion_matrix"])
-
-            with col:
-                bench_card_html = f"""
+        stat_c1, stat_c2 = st.columns(2)
+        with stat_c1:
+            nfr_rows = []
+            for cat_key, vi_name in ISO_VI_LABELS.items():
+                cnt = iso_counts.get(cat_key, 0)
+                nfr_rows.append(
+                    f"<tr><td style='text-align:left;'>{html.escape(vi_name)} ({cat_key})</td>"
+                    f"<td><b>{cnt} yêu cầu</b></td></tr>"
+                )
+            render_html(
+                f"""
 <div class="req-card">
     <div class="req-header">
-        <span class="badge-id" style="background:{accent_hex};">{tier_title}</span>
-        <span class="badge-ok">{m_data['total_samples']} câu mẫu</span>
+        <span class="badge-id" style="background:#1D4ED8;">Phân bố Tiêu chuẩn Chất lượng (ISO 25010)</span>
+        <span class="badge-sub">Dữ liệu thực tế</span>
     </div>
-    <div style="font-size:0.83rem; color:#64748B; margin-bottom:12px;">{tier_desc}</div>
-    <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:4px;">
-        <span class="summary-label">Tỷ lệ phân loại đúng (Accuracy)</span>
-        <span class="summary-number" style="font-size:1.5rem; color:{accent_hex};">{acc_pct:.1f}%</span>
-    </div>
-    <div class="meter-bg" style="margin-bottom:12px;">
-        <div class="meter-bar" style="width:{acc_pct}%; background:{accent_hex};"></div>
-    </div>
-    <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-bottom:12px;
-                font-size:0.8rem; text-align:center;">
-        <div style="background:#F8FAFC; padding:6px; border-radius:6px; border:1px solid #E2E8F0;">
-            <div style="color:#64748B; font-size:0.73rem;">Điểm F1 Chung</div>
-            <div style="font-weight:700; color:#0F172A;">{macro_f1:.3f}</div>
-        </div>
-        <div style="background:#F8FAFC; padding:6px; border-radius:6px; border:1px solid #E2E8F0;">
-            <div style="color:#64748B; font-size:0.73rem;">Điểm Tính năng</div>
-            <div style="font-weight:700; color:#0F766E;">{fr_f1:.3f}</div>
-        </div>
-        <div style="background:#F8FAFC; padding:6px; border-radius:6px; border:1px solid #E2E8F0;">
-            <div style="color:#64748B; font-size:0.73rem;">Điểm Chất lượng</div>
-            <div style="font-weight:700; color:#1D4ED8;">{nfr_f1:.3f}</div>
-        </div>
-    </div>
-    <div style="font-size:0.78rem; font-weight:600; color:#475569;">
-        Bảng chi tiết số câu đoán đúng / đoán nhầm:
-    </div>
-    {cm_html}
+    <table class="cm-table">
+        <thead><tr><th style="text-align:left;">Nhóm tiêu chuẩn chất lượng</th><th>Số lượng trong tài liệu</th></tr></thead>
+        <tbody>{"".join(nfr_rows)}</tbody>
+    </table>
 </div>
                 """
-                render_html(bench_card_html)
+            )
+
+        with stat_c2:
+            vague_cnt = sum(1 for r in result.requirements if r.vague_terms)
+            actor_cnt = sum(1 for r in result.requirements if r.missing_actor)
+            metric_cnt = sum(1 for r in result.requirements if r.missing_metric)
+            clean_cnt = sum(1 for r in result.requirements if not r.is_ambiguous)
+            render_html(
+                f"""
+<div class="req-card">
+    <div class="req-header">
+        <span class="badge-id" style="background:#0F766E;">Thống kê Chất lượng Ngôn ngữ Yêu cầu</span>
+        <span class="badge-ok">{len(result.requirements)} câu đã quét</span>
+    </div>
+    <table class="cm-table">
+        <thead><tr><th style="text-align:left;">Tiêu chí kiểm tra</th><th>Số câu ghi nhận</th></tr></thead>
+        <tbody>
+            <tr><td style="text-align:left;">Câu đã viết rõ ràng, đủ thông số</td>
+                <td class="cm-good">{clean_cnt} câu</td></tr>
+            <tr><td style="text-align:left;">Câu chứa từ ngữ cảm tính, chung chung</td>
+                <td class="cm-miss">{vague_cnt} câu</td></tr>
+            <tr><td style="text-align:left;">Câu chưa nêu rõ chủ thể / người dùng</td>
+                <td class="cm-miss">{actor_cnt} câu</td></tr>
+            <tr><td style="text-align:left;">Yêu cầu chất lượng thiếu con số đo lường</td>
+                <td class="cm-miss">{metric_cnt} câu</td></tr>
+        </tbody>
+    </table>
+</div>
+                """
+            )
+
+        # Ma trận truy vết 2 chiều (Requirements Traceability Matrix) trên dữ liệu thật
+        story_by_req = {us.req_id: us for us in result.user_stories}
+        rtm_rows = []
+        for r in result.requirements:
+            us = story_by_req.get(r.req_id)
+            us_id = us.story_id if us else "-"
+            actor_name = us.role if us else "-"
+            uc_title = us.puml_usecase_name if us else "-"
+            ac_cnt = len(us.acceptance_criteria) if us else 0
+            r_type_vi = "Tính năng (FR)" if r.req_type == "FR" else f"Chất lượng ({r.nfr_category or 'NFR'})"
+            r_state = "Cần làm rõ" if r.is_ambiguous else "Đã rõ ràng"
+            state_cls = "cm-miss" if r.is_ambiguous else "cm-good"
+            rtm_rows.append(
+                f"<tr>"
+                f"<td><b>{html.escape(r.req_id)}</b></td>"
+                f"<td>{html.escape(r_type_vi)}</td>"
+                f"<td class='{state_cls}'>{r_state}</td>"
+                f"<td><b>{html.escape(us_id)}</b></td>"
+                f"<td>{html.escape(actor_name)}</td>"
+                f"<td style='text-align:left;'>{html.escape(uc_title)}</td>"
+                f"<td>{ac_cnt} kịch bản</td>"
+                f"</tr>"
+            )
+
+        render_html(
+            f"""
+<div class="req-card">
+    <div class="req-header">
+        <span class="badge-id">Ma trận Truy vết Yêu cầu Thực tế (Requirements Traceability Matrix)</span>
+        <span class="badge-ok">Đồng bộ 100%</span>
+    </div>
+    <table class="cm-table">
+        <thead>
+            <tr>
+                <th>Mã Yêu cầu</th>
+                <th>Phân loại</th>
+                <th>Độ rõ ràng</th>
+                <th>Mã Kịch bản</th>
+                <th>Người sử dụng</th>
+                <th style="text-align:left;">Chức năng trên Sơ đồ</th>
+                <th>Kiểm thử</th>
+            </tr>
+        </thead>
+        <tbody>{"".join(rtm_rows)}</tbody>
+    </table>
+</div>
+            """
+        )

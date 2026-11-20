@@ -9,6 +9,7 @@ Thiết kế theo hướng trực quan, hiện đại, thân thiện với cả 
 """
 
 import streamlit as st
+from src.classifiers.llm_client import is_real_api_key
 
 
 SVG_ICONS = {
@@ -117,14 +118,12 @@ def render_html(raw_html: str, slot=None):
 
 
 def is_llm_ready(config: dict) -> bool:
-    """Kiểm tra xem người dùng đã thực sự cấu hình API Key hợp lệ cho AI hay chưa."""
-    provider = config.get("provider", "offline")
-    if provider == "offline":
-        return False
+    """Kiểm tra xem người dùng đã thực sự nhập API Key hợp lệ cho AI hay chưa."""
+    provider = config.get("provider", "groq")
     if provider == "ollama":
         return True
     api_key = (config.get("api_key") or "").strip()
-    return len(api_key) > 5
+    return is_real_api_key(api_key)
 
 
 def inject_design_system_css():
@@ -694,28 +693,24 @@ div[data-testid="stTabs"] button[data-baseweb="tab"] {
 
 
 def render_command_header(config: dict, project_lang: str = "vi"):
-    """Render Banner đầu trang dễ hiểu, hiển thị trung thực trạng thái kết nối AI / Offline."""
-    provider = config.get("provider", "offline")
+    """Render Banner đầu trang hiển thị chính xác trạng thái kết nối AI thực tế."""
+    provider = config.get("provider", "groq")
     llm_ready = is_llm_ready(config)
 
     provider_names = {
         "groq": "Groq AI",
         "openrouter": "OpenRouter AI",
         "gemini": "Google Gemini AI",
-        "ollama": "Ollama (Nội bộ)",
-        "offline": "Học máy có sẵn (Offline)",
+        "ollama": "Ollama (Local Server)",
     }
     p_display = provider_names.get(provider, provider.upper())
 
     if llm_ready:
         dot_cls = "dot-green"
-        engine_status = f"Đang bật AI: {p_display}"
-    elif provider == "offline":
-        dot_cls = "dot-amber"
-        engine_status = "Chế độ Học máy có sẵn (Không cần API Key)"
+        engine_status = f"Đã sẵn sàng kết nối: {p_display}"
     else:
         dot_cls = "dot-amber"
-        engine_status = f"Chưa nhập API Key {p_display} → Tự động dùng Chế độ có sẵn (Offline)"
+        engine_status = f"Chưa nhập API Key cho {p_display}"
 
     lang_display = "Tiếng Việt" if project_lang == "vi" else "Tiếng Anh"
 
@@ -726,8 +721,8 @@ def render_command_header(config: dict, project_lang: str = "vi"):
         <div>
             <h1 class="hero-title">BA-Gen — Trợ lý Phân tích Yêu cầu &amp; Viết Đặc tả Phần mềm</h1>
             <p class="hero-desc">
-                Biến văn bản mô tả ý tưởng thô thành Danh sách Tính năng rõ ràng, Kịch bản Người dùng,
-                Sơ đồ Chức năng và Tài liệu Word (.docx)
+                Phân tích trực tiếp tài liệu thực tế của bạn bằng AI: Tách tính năng, Sửa câu mơ hồ,
+                Sinh kịch bản kiểm thử, Vẽ sơ đồ Use Case và Xuất báo cáo Word (.docx)
             </p>
         </div>
     </div>
@@ -804,50 +799,50 @@ def build_pipeline_console_html(
 
 
 def render_empty_state_blueprint():
-    """Hiển thị hướng dẫn 3 bước trực quan, dễ hiểu cho người mới bắt đầu."""
+    """Hiển thị hướng dẫn 3 bước trực quan sử dụng dữ liệu thật và kết nối AI thật."""
     guide_html = f"""
 <div style="margin-top: 10px;">
     <div style="font-size: 1.05rem; font-weight: 700; color: #0F172A; margin-bottom: 12px;">
-        Cách sử dụng công cụ chỉ với 3 bước đơn giản:
+        Quy trình phân tích tài liệu thực tế với AI trong 3 bước:
     </div>
     <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;">
         <div class="req-card" style="margin-bottom: 0;">
             <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px; color: #1E40AF;">
-                {svg_icon("file-text")}
-                <span style="font-size: 0.82rem; font-weight: 700;">BƯỚC 1 · NHẬP Ý TƯỞNG / ĐỀ BÀI</span>
+                {svg_icon("sliders")}
+                <span style="font-size: 0.82rem; font-weight: 700;">BƯỚC 1 · KẾT NỐI KHÓA AI (API KEY)</span>
             </div>
             <div style="font-weight: 700; font-size: 1rem; margin-bottom: 6px;">
-                Dán văn bản hoặc tải file Word (.docx)
+                Nhập API Key ở thanh bên trái
             </div>
             <p style="font-size: 0.88rem; color: #475569; line-height: 1.55; margin: 0;">
-                Bạn chỉ cần dán đoạn mô tả mong muốn về phần mềm (hoặc bấm nút
-                <b>"Dùng thử Bài mẫu Thương mại điện tử"</b> ở trên để xem ngay cách hệ thống hoạt động).
+                Chọn nền tảng AI bạn muốn sử dụng (<b>Groq AI</b>, <b>Google Gemini</b>, <b>OpenRouter</b>
+                hoặc <b>Ollama</b>) và dán mã API Key thực tế vào thanh cài đặt bên trái.
             </p>
         </div>
         <div class="req-card" style="margin-bottom: 0;">
             <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px; color: #0F766E;">
-                {svg_icon("sparkles")}
-                <span style="font-size: 0.82rem; font-weight: 700;">BƯỚC 2 · TỰ ĐỘNG RÀ SOÁT &amp; LÀM RÕ</span>
+                {svg_icon("file-text")}
+                <span style="font-size: 0.82rem; font-weight: 700;">BƯỚC 2 · ĐƯA TÀI LIỆU THỰC TẾ VÀO</span>
             </div>
             <div style="font-weight: 700; font-size: 1rem; margin-bottom: 6px;">
-                Phát hiện từ viết chung chung &amp; gợi ý sửa
+                Tải file Word (.docx) hoặc dán yêu cầu thật
             </div>
             <p style="font-size: 0.88rem; color: #475569; line-height: 1.55; margin: 0;">
-                Hệ thống tự động tách văn bản thành từng yêu cầu nhỏ, chỉ ra những chỗ viết còn cảm tính
-                (như <i>"chạy nhanh", "dễ dùng"</i>) và gợi ý câu viết lại rõ ràng, có con số cụ thể.
+                Tải lên tệp mô tả bài toán của dự án (<code>.docx</code>, <code>.txt</code>) hoặc dán trực tiếp
+                nội dung yêu cầu thực tế của khách hàng để AI bóc tách và chuẩn hóa.
             </p>
         </div>
         <div class="req-card" style="margin-bottom: 0;">
             <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px; color: #1D4ED8;">
                 {svg_icon("git-branch")}
-                <span style="font-size: 0.82rem; font-weight: 700;">BƯỚC 3 · XUẤT BÁO CÁO &amp; SƠ ĐỒ</span>
+                <span style="font-size: 0.82rem; font-weight: 700;">BƯỚC 3 · NHẬN HỒ SƠ ĐẶC TẢ &amp; ĐỒNG BỘ</span>
             </div>
             <div style="font-weight: 700; font-size: 1rem; margin-bottom: 6px;">
                 Tải file Word (.docx), Sơ đồ &amp; đẩy sang Jira
             </div>
             <p style="font-size: 0.88rem; color: #475569; line-height: 1.55; margin: 0;">
-                Nhận ngay danh sách kịch bản người dùng, sơ đồ chức năng trực quan và tải về tài liệu
-                đặc tả phần mềm (.docx) hoàn chỉnh hoặc đồng bộ sang Jira, GitHub, Trello.
+                AI phân tích trực tiếp từng câu, gợi ý viết lại câu mơ hồ, sinh kịch bản kiểm thử,
+                vẽ sơ đồ Use Case và đóng gói tài liệu SRS (.docx) hoặc đẩy thẳng lên Jira / GitHub / Trello.
             </p>
         </div>
     </div>
