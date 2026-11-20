@@ -5,7 +5,7 @@ và toàn bộ đường ống xử lý 6 bước phía sau. Hỗ trợ thao tá
 """
 
 import time
-from typing import List, Optional, Union
+from typing import Callable, List, Optional, Union
 from src.analyzers.ambiguity_detector import AmbiguityDetector
 from src.classifiers.hybrid_classifier import HybridClassifierStrategy
 from src.classifiers.llm_client import MultiLLMClient
@@ -53,13 +53,16 @@ class RequirementAnalysisFacade:
         source: Union[bytes, str],
         filename: str = "input.txt",
         file_size_bytes: int = 0,
-        project_name: Optional[str] = None
+        project_name: Optional[str] = None,
+        progress_callback: Optional[Callable[[int, str, str], None]] = None,
     ) -> AnalysisResultDTO:
         """Thực thi đường ống xử lý 6 bước từ tài liệu thô đến bộ đặc tả hoàn chỉnh."""
         total_start = time.perf_counter()
         timings = {}
 
         # Bước 1: Đọc tệp & tách câu nguyên tử
+        if progress_callback:
+            progress_callback(1, "INGEST & SEGMENT", "Đọc tài liệu nguồn & phân tách câu yêu cầu nguyên tử...")
         t0 = time.perf_counter()
         parser = DocumentIngestionFactory.create_parser(filename, file_size_bytes)
         raw_text = parser.parse(source)
@@ -77,6 +80,12 @@ class RequirementAnalysisFacade:
         self.db.save_project(self.current_project)
 
         # Bước 2: Phân loại FR / NFR lai ghép
+        if progress_callback:
+            progress_callback(
+                2,
+                "HYBRID CLASSIFIER",
+                f"Định tuyến phân loại FR/NFR & ISO 25010 cho {len(sentences)} câu yêu cầu...",
+            )
         t1 = time.perf_counter()
         classified_reqs = self.classifier.classify(sentences, lang=lang)
         for req in classified_reqs:
@@ -84,6 +93,8 @@ class RequirementAnalysisFacade:
         timings["classification_sec"] = round(time.perf_counter() - t1, 3)
 
         # Bước 3: Rà soát mơ hồ & gợi ý chuẩn SMART
+        if progress_callback:
+            progress_callback(3, "AMBIGUITY & SMART", "Quét từ điển cảm tính, kiểm tra Actor/Metric & tổng hợp câu SMART...")
         t2 = time.perf_counter()
         analyzed_reqs = self.ambiguity_detector.analyze_batch(classified_reqs, lang=lang)
         self.current_requirements = analyzed_reqs
@@ -91,6 +102,8 @@ class RequirementAnalysisFacade:
         timings["ambiguity_and_smart_sec"] = round(time.perf_counter() - t2, 3)
 
         # Bước 4: Sinh Agile User Stories & Tiêu chí Nghiệm thu Gherkin
+        if progress_callback:
+            progress_callback(4, "BDD GENERATOR", "Kiến tạo Agile User Stories (Role-Goal-Benefit) & kịch bản Gherkin...")
         t3 = time.perf_counter()
         stories = self.user_story_gen.generate_stories_batch(self.current_requirements, lang=lang)
         self.current_user_stories = stories
@@ -98,6 +111,8 @@ class RequirementAnalysisFacade:
         timings["user_stories_gen_sec"] = round(time.perf_counter() - t3, 3)
 
         # Bước 5: Sinh mã PlantUML và kết xuất sơ đồ Use Case
+        if progress_callback:
+            progress_callback(5, "UML 2.5 & IEEE 830", "Biên dịch sơ đồ Use Case PlantUML & đóng gói hồ sơ đặc tả SRS...")
         t4 = time.perf_counter()
         puml_code, puml_bytes = self.plantuml_exporter.export(
             self.current_user_stories,
@@ -109,7 +124,13 @@ class RequirementAnalysisFacade:
 
         timings["total_execution_sec"] = round(time.perf_counter() - total_start, 3)
         self.timings = timings
+        if progress_callback:
+            progress_callback(6, "COMPLETED", f"Hoàn tất toàn bộ đường ống trong {self.timings['total_execution_sec']}s")
 
+        return self.get_current_result()
+
+    def get_current_result(self) -> AnalysisResultDTO:
+        """Lấy đối tượng AnalysisResultDTO đồng bộ mới nhất."""
         return AnalysisResultDTO(
             project=self.current_project,
             requirements=self.current_requirements,
