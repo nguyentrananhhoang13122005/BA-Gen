@@ -1,7 +1,10 @@
-# Môi trường ảo Python
+# Môi trường ảo Python & Node.js
 .venv/
 venv/
 env/
+node_modules/
+frontend/node_modules/
+.impeccable/
 
 # Biến môi trường & khóa API bí mật
 .env
