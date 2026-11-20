@@ -1,0 +1,13 @@
+services:
+  ba-gen:
+    build: .
+    container_name: ba_gen_app
+    ports:
+      - "8501:8501"
+    environment:
+      - DEFAULT_PROVIDER=groq
+      - CONFIDENCE_THRESHOLD=0.75
+    volumes:
+      - ./data:/app/data
+      - ./exports:/app/exports
+    restart: unless-stopped

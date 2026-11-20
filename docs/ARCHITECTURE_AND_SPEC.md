@@ -1,6 +1,6 @@
 # Kiến trúc & Đặc tả Hệ thống — BA-Gen (ReqAssist-NLP)
 
-Tài liệu này mô tả thiết kế kiến trúc, lựa chọn công nghệ thực tế, chiến lược vận hành LLM tiết kiệm hạn mức và bộ đặc tả yêu cầu hoàn chỉnh cho hệ thống **BA-Gen (ReqAssist-NLP)**.
+Tài liệu này mô tả thiết kế kiến trúc, lựa chọn công nghệ thực tế, chiến lược vận hành LLM tiết kiệm hạn mức, hợp đồng dữ liệu JSON, quản lý rủi ro và bộ đặc tả yêu cầu hoàn chỉnh cho hệ thống **BA-Gen (ReqAssist-NLP)**.
 
 ---
 
@@ -18,10 +18,24 @@ Hệ thống hỗ trợ song ngữ **Tiếng Việt (`vi`)** và **Tiếng Anh (
 - **F5 — Xuất bản SRS rút gọn & Sơ đồ Use Case PlantUML:** Xuất tệp `.docx` / `.md` tuân thủ chuẩn IEEE 830 / ISO 29148 và sinh mã `@startuml ... @enduml` kết xuất ảnh `.png` / `.svg`.
 - **F6 — Đánh giá Kiểm chuẩn (Benchmark Evaluator):** Đo lường Accuracy, Precision, Recall, Macro F1-Score và Ma trận Nhầm lẫn 2×2 trên bộ 35 câu yêu cầu gán nhãn thủ công.
 
+### 1.3 Đối chiếu Tiêu chuẩn Công nghiệp & Học thuật (Academic & Industry Standards)
+
+Dự án tích hợp trực tiếp các tiêu chuẩn kỹ thuật phần mềm quốc tế:
+
+| Tiêu chuẩn / Chuẩn mực | Phạm vi Áp dụng trong Dự án | Mục đích & Ý nghĩa Kỹ thuật |
+| :--- | :--- | :--- |
+| **ISO/IEC 25010:2011** | Phân loại nhãn phụ cho câu NFR (F2) | Chuẩn hóa 6 đặc tính chất lượng phần mềm (*Performance Efficiency, Security, Usability, Reliability, Maintainability, Portability*). |
+| **ISO/IEC/IEEE 29148:2018 & IEEE 830-1998** | Cấu trúc tài liệu SRS rút gọn (F5) | Đảm bảo tài liệu đặc tả có cấu trúc chuẩn mực: Phạm vi, Tác nhân, Danh mục FR, Danh mục NFR, Ma trận truy vết. |
+| **SMART Criteria** | Kiểm tra chất lượng & gợi ý viết lại câu (F3) | Đảm bảo yêu cầu đạt chuẩn: *Specific* (Rõ ràng), *Measurable* (Đo lường được), *Achievable* (Khả thi), *Relevant* (Thích hợp), *Time-bound* (Có thời hạn/ngưỡng). |
+| **INVEST Model & Connextra Template** | Sinh Agile User Story (F4) | Cấu trúc chuẩn *As a... / I want... / So that...* đạt tiêu chí độc lập (*Independent*), có giá trị (*Valuable*) và kiểm thử được (*Testable*). |
+| **Gherkin Syntax (BDD)** | Sinh Tiêu chí Nghiệm thu (F4) | Chuẩn *GIVEN / WHEN / THEN* hỗ trợ kiểm thử hành vi tự động hóa, bao gồm cả kịch bản thành công và kịch bản biên/lỗi. |
+| **UML 2.5 (Use Case Model)** | Kết xuất Sơ đồ Use Case (F5) | Trực quan hóa tương tác giữa Tác nhân (Actor) và Ca sử dụng (Use Case) theo chuẩn OMG. |
+
 ---
 
 ## 2. Kiến trúc Tổng thể (3-Tier Modular Monolith)
 
+### 2.1 Sơ đồ Phân tầng Kiến trúc (Component Diagram)
 Hệ thống áp dụng kiến trúc **Modular Monolith phân tách 3 tầng** nhằm loại bỏ độ trễ giao tiếp mạng giữa các mô-đun nhỏ, dễ dàng đóng gói trong một ứng dụng Python/Docker duy nhất nhưng vẫn đảm bảo tách biệt ranh giới trách nhiệm thông qua các giao diện trừu tượng.
 
 ```mermaid
@@ -64,6 +78,79 @@ flowchart TD
     E --> KROKI
 ```
 
+### 2.2 Sơ đồ Tuần tự Đầu-Cuối (End-to-End Sequence Diagram)
+
+Sơ đồ dưới đây minh họa toàn bộ vòng đời xử lý của một tài liệu tải lên từ người dùng qua cơ chế điều phối Facade, bộ nhớ đệm SQLite, phân loại lai ghép (Hybrid) và tự động chuyển đổi dự phòng (Circuit-Breaker Fallback):
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor BA as Chuyên viên BA
+    participant UI as Streamlit UI (app.py)
+    participant FACADE as RequirementAnalysisFacade
+    participant PARSER as DocumentIngestionFactory
+    participant SEG as RequirementSegmenter
+    participant CACHE as SQLite SHA-256 Cache
+    participant ML as Offline ML (LinearSVC)
+    participant LLM as Multi-LLM Gateway
+    participant ANALYZER as Ambiguity & SMART Analyzer
+    participant GEN as User Story Generator
+    participant EXP as SRS & PlantUML Exporter
+    participant KROKI as Kroki API (PlantUML)
+
+    BA->>UI: Tải lên tài liệu (.docx/.txt) & bấm "Phân tích"
+    UI->>FACADE: analyze_document(file_content, filename, config)
+    
+    %% Bước 1: Đọc & tách câu
+    FACADE->>PARSER: create_parser(filename).parse(content)
+    PARSER-->>FACADE: raw_text (UTF-8, Unicode NFC)
+    FACADE->>SEG: segment(raw_text)
+    SEG-->>FACADE: List[RawSentence] (loại bỏ câu < 4 từ, bảo vệ e.g./VD)
+
+    %% Bước 2: Phân loại FR/NFR lai ghép
+    loop Với từng Batch (10-15 câu)
+        FACADE->>CACHE: check_cache(batch_hashes)
+        alt Toàn bộ hit Cache
+            CACHE-->>FACADE: Trả về kết quả phân loại đã lưu
+        else Cache Miss
+            FACADE->>ML: predict_offline(batch_sentences)
+            ML-->>FACADE: predictions + confidence scores
+            opt Có câu confidence < 75% hoặc ở chế độ Full LLM
+                FACADE->>LLM: classify_batch(uncertain_sentences)
+                alt LLM Thành công (200 OK)
+                    LLM-->>FACADE: JSON [FR/NFR + ISO 25010 + Confidence]
+                    FACADE->>CACHE: save_cache(batch_hashes, results)
+                else Lỗi Mạng / HTTP 429 Rate Limit (Fallback)
+                    LLM-->>FACADE: Exception Timeout / 429
+                    FACADE->>FACADE: Kích hoạt Circuit-Breaker: Giữ nguyên kết quả ML
+                end
+            end
+        end
+    end
+
+    %% Bước 3: Rà soát mơ hồ & SMART
+    FACADE->>ANALYZER: detect_ambiguity_and_smart(classified_reqs)
+    ANALYZER-->>FACADE: flags (vague_terms, missing_actor, missing_metric) + smart_rewrite
+
+    %% Bước 4: Sinh User Story & Gherkin
+    FACADE->>GEN: generate_user_stories(requirements)
+    GEN-->>FACADE: List[UserStory] (Role, Goal, Benefit + 2 Gherkin ACs)
+
+    %% Bước 5: Tạo SRS và Render Sơ đồ
+    FACADE->>EXP: generate_plantuml(user_stories)
+    EXP->>KROKI: POST /plantuml/png (diagram_code)
+    alt Kroki Online
+        KROKI-->>EXP: image/png bytes
+    else Kroki Offline
+        EXP-->>FACADE: fallback trả về mã .puml thuần
+    end
+    FACADE->>EXP: build_srs_document(project_data)
+    EXP-->>FACADE: srs.docx + srs.md
+
+    FACADE-->>UI: AnalysisResultDTO (Cập nhật 4 Tabs)
+    UI-->>BA: Hiển thị bảng KPI, tô đỏ từ mơ hồ, ảnh Use Case & nút tải SRS
+```
+
 ---
 
 ## 3. Lựa chọn Công nghệ Thực tế (Real-World Stack)
@@ -101,7 +188,7 @@ Khi cổng LLM gặp một trong các sự cố: mất mạng, hết hạn mức
 
 ## 5. Các Mẫu Thiết kế Hướng đối tượng (5 GoF Design Patterns)
 
-| Mẫu Thiết kế | Tệp Triển khai Dự kiến | Vai trò & Giá trị Kỹ thuật |
+| Mẫu Thiết kế | Tệp Triển khai | Vai trò & Giá trị Kỹ thuật |
 | :--- | :--- | :--- |
 | **Strategy Pattern** | `src/classifiers/base.py`, `ml_classifier.py`, `llm_classifier.py`, `hybrid_classifier.py` | Đóng gói các thuật toán phân loại dưới cùng giao diện `IClassifierStrategy`, cho phép chuyển nóng giữa Groq, OpenRouter, Gemini và Offline ML. |
 | **Factory Method Pattern** | `src/parsers/factory.py` | Lớp `DocumentIngestionFactory` tự khởi tạo đúng bộ đọc (`RawTextParser`, `TxtDocumentParser`, `DocxDocumentParser`) theo định dạng đầu vào. |
@@ -166,7 +253,86 @@ Khi cổng LLM gặp một trong các sự cố: mất mạng, hết hạn mức
 
 ---
 
-## 8. Cấu trúc Mã nguồn Dự kiến sau khi Hoàn thiện 17 Issues
+## 8. Hợp đồng Dữ liệu & Định dạng JSON (Data Contracts & JSON Schemas)
+
+Hệ thống giao tiếp với các mô hình LLM qua chuẩn JSON có cấu trúc nghiêm ngặt (*Structured JSON Output*). Dưới đây là các schema mẫu tương ứng:
+
+### 8.1 Schema Phân loại FR/NFR theo Batch (Batch Classification)
+```json
+{
+  "batch_results": [
+    {
+      "index": 1,
+      "req_type": "NFR",
+      "nfr_category": "Performance",
+      "confidence": 0.95,
+      "reasoning": "Yêu cầu đặt ra ràng buộc thời gian phản hồi dưới 2 giây."
+    },
+    {
+      "index": 2,
+      "req_type": "FR",
+      "nfr_category": null,
+      "confidence": 0.98,
+      "reasoning": "Mô tả tính năng người dùng đăng nhập bằng mã OTP."
+    }
+  ]
+}
+```
+
+### 8.2 Schema Phát hiện Mơ hồ & Gợi ý SMART (Ambiguity & SMART Rewrite)
+```json
+{
+  "req_id": "REQ-03",
+  "is_ambiguous": true,
+  "vague_terms": ["nhanh chóng", "thân thiện"],
+  "missing_actor": false,
+  "missing_metric": true,
+  "smart_rewrite": "Hệ thống phải hoàn tất xử lý đơn hàng và phản hồi kết quả trong vòng dưới 1.5 giây trong điều kiện tải 1000 người dùng đồng thời."
+}
+```
+
+### 8.3 Schema Sinh User Story & Tiêu chí Nghiệm thu Gherkin
+```json
+{
+  "story_id": "US-01",
+  "req_id": "REQ-02",
+  "role": "Khách hàng mua sắm",
+  "goal": "thanh toán đơn hàng bằng ví điện tử",
+  "benefit": "tiết kiệm thời gian và không cần mang theo tiền mặt",
+  "acceptance_criteria": [
+    {
+      "scenario": "Thanh toán thành công khi số dư ví đủ",
+      "given": "Người dùng đã chọn phương thức thanh toán qua Ví điện tử và số dư khả dụng lớn hơn giá trị đơn hàng",
+      "when": "Người dùng nhấn nút 'Xác nhận thanh toán' và nhập đúng mã OTP",
+      "then": "Hệ thống trừ tiền trong ví, chuyển trạng thái đơn sang 'Đã thanh toán' và gửi thông báo xác nhận trong vòng 3 giây"
+    },
+    {
+      "scenario": "Thanh toán thất bại do số dư ví không đủ",
+      "given": "Người dùng chọn thanh toán Ví điện tử nhưng số dư thấp hơn tổng tiền đơn hàng",
+      "when": "Người dùng nhấn nút 'Xác nhận thanh toán'",
+      "then": "Hệ thống hiển thị cảnh báo 'Số dư không đủ' và gợi ý nạp thêm tiền hoặc đổi phương thức thanh toán khác"
+    }
+  ],
+  "puml_usecase_name": "Thanh toán qua Ví điện tử"
+}
+```
+
+---
+
+## 9. Xử lý Trường hợp Biên & Ma trận Quản lý Rủi ro (Edge Cases & Risk Mitigation)
+
+| Tình huống Biên / Rủi ro | Mức độ Ảnh hưởng | Cơ chế Xử lý & Khắc phục |
+| :--- | :---: | :--- |
+| **Tệp DOCX/PDF chỉ toàn ảnh quét (Scanned Image)** | Trung bình | Trích xuất văn bản rỗng $\rightarrow$ Hệ thống cảnh báo: *"Tài liệu không chứa lớp văn bản (text layer). Vui lòng dán văn bản trực tiếp hoặc tải tệp chứa chữ."* |
+| **Tệp bị khóa mật khẩu hoặc hư hỏng** | Thấp | Bắt lỗi `docx.opc.exceptions.PackageNotFoundError` $\rightarrow$ Thông báo người dùng mở khóa tệp và tải lại mà không làm văng ứng dụng. |
+| **Kroki API không truy cập được (Mất mạng / 503)** | Thấp | Vẫn xuất file mã nguồn `.puml` đầy đủ để người dùng tải về tự vẽ, hiển thị thông báo lỗi mạng cho phần ảnh xem trước. |
+| **Lỗi Rate Limit LLM (HTTP 429) hoặc Timeout** | Cao | Thử lại tối đa 2 lần kèm hàm lùi hàm mũ (*Exponential Backoff*). Nếu vẫn lỗi, kích hoạt Circuit-Breaker chuyển sang `OfflineMLClassifierStrategy` (`LinearSVC`) và áp dụng template SMART ngoại tuyến trong $\le 2.0\text{ giây}$. |
+| **Đoạn văn quá ngắn ($< 4$ từ) hoặc rác định dạng** | Thấp | Lọc bỏ tự động ở tầng `RequirementSegmenter` để tránh tốn token LLM và làm sai lệch thống kê. |
+| **Độ dài câu vượt quá 200 từ (Run-on Sentence)** | Trung bình | Phát hiện liên từ kết hợp (*"và", "đồng thời", "sau đó", "and", "furthermore"*) để chia nhỏ thành các tiểu câu nguyên tử trước khi phân loại. |
+
+---
+
+## 10. Cấu trúc Mã nguồn Dự kiến sau khi Hoàn thiện 17 Issues
 
 ```text
 BA-Gen/
@@ -176,7 +342,7 @@ BA-Gen/
 │   ├── benchmark_35_reqs.json      # Issue #3: Bộ 35 câu kiểm chuẩn (20 FR, 15 NFR)
 │   └── sample_ecommerce_vi.*       # Issue #3: Tài liệu mẫu 1-click
 ├── docs/
-│   ├── ARCHITECTURE_AND_SPEC.md    # Tài liệu hiện tại
+│   ├── ARCHITECTURE_AND_SPEC.md    # Tài liệu Kiến trúc, Hợp đồng Dữ liệu & Đặc tả
 │   └── IMPLEMENTATION_PLAN.md      # Lộ trình triển khai 4 Sprints & 17 Issues
 ├── src/
 │   ├── core/
