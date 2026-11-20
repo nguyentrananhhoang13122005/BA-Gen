@@ -140,13 +140,7 @@ def render_workbench(facade: RequirementAnalysisFacade, result: AnalysisResultDT
         st.subheader("🚀 Đồng bộ sang Công cụ Quản lý Dự án (Jira / GitHub / Trello)")
         st.caption("Hỗ trợ cả tải tệp cấu trúc Import nhanh lẫn đồng bộ trực tiếp qua REST API.")
 
-        sync_target = st.radio(
-            "Chọn nền tảng quản lý dự án mục tiêu:",
-            ["Atlassian Jira", "GitHub Issues", "Trello Kanban"],
-            horizontal=True
-        )
-
-        if sync_target == "Atlassian Jira":
+        with st.expander("🔷 Atlassian Jira (Xuất tệp CSV Import & REST API Cloud)", expanded=True):
             c_j1, c_j2 = st.columns([1, 1])
             with c_j1:
                 st.markdown("##### 📥 Xuất tệp Jira CSV Import")
@@ -176,7 +170,7 @@ def render_workbench(facade: RequirementAnalysisFacade, result: AnalysisResultDT
                                 err_msg = res["errors"][0].get("error", "Lỗi không xác định")
                                 st.error(f"Gặp {len(res['errors'])} lỗi khi tạo. Chi tiết: {err_msg}")
 
-        elif sync_target == "GitHub Issues":
+        with st.expander("🐙 GitHub Issues (Xuất tệp JSON & REST API Sync)", expanded=False):
             c_g1, c_g2 = st.columns([1, 1])
             with c_g1:
                 st.markdown("##### 📥 Xuất tệp GitHub JSON")
@@ -203,7 +197,7 @@ def render_workbench(facade: RequirementAnalysisFacade, result: AnalysisResultDT
                                 err_msg = res["errors"][0].get("error", "Lỗi kết nối")
                                 st.error(f"Gặp {len(res['errors'])} lỗi: {err_msg}")
 
-        elif sync_target == "Trello Kanban":
+        with st.expander("📋 Trello Kanban (Xuất tệp Board JSON & REST API Sync)", expanded=False):
             c_t1, c_t2 = st.columns([1, 1])
             with c_t1:
                 st.markdown("##### 📥 Xuất tệp Trello Board JSON")
