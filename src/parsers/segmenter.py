@@ -1,0 +1,108 @@
+"""Bộ tiền xử lý, nhận diện ngôn ngữ và tách câu yêu cầu song ngữ.
+
+Bảo vệ số thập phân (99.9%), các chữ viết tắt (VD., e.g., TP.) và cắt bỏ
+ký hiệu gạch đầu dòng để tách thành các câu yêu cầu nguyên tử.
+"""
+
+import re
+import unicodedata
+from typing import List, Tuple
+
+# Ký tự có dấu đặc trưng của tiếng Việt
+VIETNAMESE_DIACRITICS = set("àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ")
+
+# Danh sách từ viết tắt cần bảo vệ tránh bị ngắt câu sai
+ABBREVIATIONS = [
+    r"\be\.g\.", r"\bi\.e\.", r"\bvd\.", r"\btp\.", r"\bts\.",
+    r"\bth\.", r"\bvs\.", r"\bno\.", r"\bapprox\.", r"\bdr\.",
+    r"\bmr\.", r"\bms\.", r"\bprof\."
+]
+
+
+class RequirementSegmenter:
+    """Tách câu yêu cầu song ngữ Anh - Việt và nhận diện ngôn ngữ."""
+
+    @staticmethod
+    def detect_language(text: str) -> str:
+        """Nhận diện ngôn ngữ 'vi' hoặc 'en' dựa trên dấu thanh tiếng Việt."""
+        normalized = unicodedata.normalize("NFC", text.lower())
+        vi_char_count = sum(1 for char in normalized if char in VIETNAMESE_DIACRITICS)
+        words = normalized.split()
+        total_words = len(words)
+
+        if total_words == 0:
+            return "vi"
+
+        # Nếu có từ 2 ký tự tiếng Việt có dấu trở lên, kết luận là tiếng Việt
+        if vi_char_count >= 2:
+            return "vi"
+
+        # Kiểm tra một số từ chức năng phổ biến tiếng Việt không dấu
+        vi_common_words = {"va", "la", "he", "thong", "nguoi", "dung", "cho", "phep", "phai"}
+        has_vi_common = any(w in vi_common_words for w in words)
+        if has_vi_common and vi_char_count > 0:
+            return "vi"
+
+        return "en"
+
+    @classmethod
+    def clean_bullet_points(cls, text: str) -> str:
+        """Loại bỏ ký hiệu đầu dòng như bullet points, số thứ tự (1., a), •, -)."""
+        lines = text.splitlines()
+        cleaned_lines = []
+        for line in lines:
+            trimmed = line.strip()
+            if not trimmed:
+                continue
+            # Xóa các tiền tố đầu dòng: 1., 1), a), -, *, •, >
+            trimmed = re.sub(r"^[\s•\-\*\>]+", "", trimmed)
+            trimmed = re.sub(r"^\d+[\.\)]\s*", "", trimmed)
+            trimmed = re.sub(r"^[a-zA-Z][\.\)]\s*", "", trimmed)
+            if trimmed:
+                cleaned_lines.append(trimmed)
+        return "\n".join(cleaned_lines)
+
+    @classmethod
+    def segment(cls, raw_text: str) -> Tuple[List[str], str]:
+        """Tách chuỗi văn bản thành danh sách các câu yêu cầu nguyên tử.
+
+        Returns:
+            Tuple[List[str], str]: (danh sách các câu ứng viên >= 4 từ, mã ngôn ngữ)
+        """
+        if not raw_text or not raw_text.strip():
+            return [], "vi"
+
+        normalized = unicodedata.normalize("NFC", raw_text)
+        lang = cls.detect_language(normalized)
+        cleaned_text = cls.clean_bullet_points(normalized)
+
+        # 1. Bảo vệ số thập phân: thay thế dấu chấm trong 99.9 hoặc 1.5 bằng token tạm thời
+        protected_text = re.sub(r"(\d+)\.(\d+)", r"\1__DECIMAL_DOT__\2", cleaned_text)
+
+        # 2. Bảo vệ các từ viết tắt phổ biến
+        for abbrev in ABBREVIATIONS:
+            def replace_abbrev(match):
+                return match.group(0).replace(".", "__ABBREV_DOT__")
+            protected_text = re.sub(abbrev, replace_abbrev, protected_text, flags=re.IGNORECASE)
+
+        # 3. Tách theo dấu kết thúc câu (. ! ? \n ;)
+        sentences = re.split(r"(?<=[.!?;\n])\s+", protected_text)
+
+        candidate_requirements = []
+        for s in sentences:
+            # Khôi phục lại các token đã bảo vệ
+            restored = s.replace("__DECIMAL_DOT__", ".").replace("__ABBREV_DOT__", ".")
+            restored = restored.strip(" \t\n\r.;")
+            if not restored:
+                continue
+
+            words = restored.split()
+            # Yêu cầu REQ-1.4: Lọc bỏ các mảnh văn bản nhỏ hơn 4 từ
+            if len(words) >= 4:
+                # Viết hoa chữ cái đầu và thêm dấu chấm kết câu chuẩn
+                formatted = restored[0].upper() + restored[1:]
+                if not formatted.endswith((".", "!", "?")):
+                    formatted += "."
+                candidate_requirements.append(formatted)
+
+        return candidate_requirements, lang
