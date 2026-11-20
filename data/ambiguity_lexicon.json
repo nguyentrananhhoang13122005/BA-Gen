@@ -1,0 +1,35 @@
+{
+  "ambiguous_terms_vi": [
+    "nhanh", "nhanh chóng", "chớp mắt", "tức thì", "tối ưu", "cực nhanh",
+    "thân thiện", "dễ dùng", "dễ sử dụng", "đơn giản", "tiện lợi", "mượt mà", "trực quan",
+    "an toàn", "an toàn tuyệt đối", "bảo mật cao", "chắc chắn", "bền bỉ", "tin cậy",
+    "mạnh mẽ", "mạnh", "linh hoạt", "thông minh", "hiện đại", "đẹp", "bắt mắt",
+    "gần như", "khoảng", "khoảng chừng", "tương đối", "khá", "vừa phải", "phù hợp",
+    "nhiều", "ít", "đủ", "rất", "cực kỳ", "hợp lý", "hiệu quả", "chất lượng cao",
+    "thường xuyên", "đôi khi", "thỉnh thoảng", "sớm", "kịp thời", "đúng hạn",
+    "tối đa có thể", "nếu cần", "khi có thể", "bình thường", "chuẩn", "ổn định"
+  ],
+  "ambiguous_terms_en": [
+    "fast", "quickly", "rapid", "instant", "as soon as possible", "promptly",
+    "user-friendly", "easy to use", "simple", "intuitive", "smooth", "seamless",
+    "secure", "highly secure", "bulletproof", "robust", "reliable", "safe",
+    "powerful", "strong", "flexible", "smart", "intelligent", "modern", "aesthetic",
+    "almost", "approximately", "around", "relatively", "quite", "moderate", "appropriate",
+    "many", "few", "enough", "very", "extremely", "reasonable", "effective", "high quality",
+    "frequently", "sometimes", "occasionally", "early", "timely", "on time",
+    "as much as possible", "if needed", "when possible", "normal", "standard", "stable"
+  ],
+  "actors_vi": [
+    "người dùng", "khách hàng", "quản trị viên", "nhân viên", "hệ thống",
+    "kế toán", "bán hàng", "chuyên viên", "admin", "shipper", "tài xế",
+    "bác sĩ", "bệnh nhân", "học sinh", "giáo viên", "người mua", "người bán"
+  ],
+  "actors_en": [
+    "user", "customer", "admin", "administrator", "system", "employee",
+    "staff", "manager", "buyer", "seller", "driver", "doctor", "patient",
+    "student", "teacher", "specialist", "operator", "client"
+  ],
+  "metrics_regex": [
+    "(?:<=|>=|<|>|=|tối đa|tối thiểu|ít nhất|không quá|dưới|trong vòng|trong khoảng|within|at least|maximum|minimum|under)\\s*\\d+(?:[.,]\\d+)?\\s*(?:ms|mili giây|giây|phút|giờ|s|sec|seconds|minutes|hours|%|phần trăm|percent|mb|gb|kb|ccu|req/s|rps|lượt/giây|giao dịch/giây|tps|bước|lần|users|người dùng)"
+  ]
+}

@@ -1,0 +1,12 @@
+TÀI LIỆU MÔ TẢ YÊU CẦU BÀI TOÁN HỆ THỐNG THƯƠNG MẠI ĐIỆN TỬ E-SHOP
+
+1. Khách hàng có thể tìm kiếm sản phẩm theo tên, danh mục hoặc khoảng giá mong muốn.
+2. Hệ thống cho phép người mua thêm sản phẩm vào giỏ hàng và cập nhật số lượng hàng đặt.
+3. Ứng dụng phải hỗ trợ thanh toán trực tuyến qua thẻ tín dụng và ví điện tử VNPAY.
+4. Giao diện trang chủ phải cực kỳ thân thiện và dễ sử dụng cho mọi lứa tuổi.
+5. Hệ thống phải phản hồi nhanh và chạy mượt mà trong chớp mắt.
+6. Thời gian phản hồi tìm kiếm sản phẩm phải dưới 1.5 giây khi có 1000 người dùng đồng thời.
+7. Mọi mật khẩu tài khoản phải được mã hóa một chiều bằng thuật toán an toàn trước khi lưu trữ.
+8. Quản trị viên có quyền khóa tài khoản người dùng nếu phát hiện hành vi gian lận.
+9. Dữ liệu đơn hàng phải được sao lưu tự động định kỳ mỗi ngày.
+10. Hệ thống gửi thông báo đẩy đến điện thoại của khách hàng ngay sau khi đơn hàng được xác nhận.
