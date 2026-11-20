@@ -149,9 +149,9 @@ export default function App() {
   const [activeView, setActiveView] = useState('setup');
 
   // AI Configuration state
-  const [provider, setProvider] = useState('groq');
+  const [provider, setProvider] = useState('local_nlp');
   const [apiKey, setApiKey] = useState('');
-  const [modelName, setModelName] = useState('llama-3.3-70b-versatile');
+  const [modelName, setModelName] = useState('TF-IDF + LinearSVC (Bilingual NLP)');
   const [envDefaults, setEnvDefaults] = useState({});
 
   // Document Input state (Real user data only)
@@ -203,7 +203,9 @@ export default function App() {
   // Update default model when provider changes
   const handleProviderChange = (newProv) => {
     setProvider(newProv);
-    if (newProv === 'groq') setModelName('llama-3.3-70b-versatile');
+    setErrorMsg('');
+    if (newProv === 'local_nlp') setModelName('TF-IDF + LinearSVC (Bilingual NLP)');
+    else if (newProv === 'groq') setModelName('llama-3.3-70b-versatile');
     else if (newProv === 'gemini') setModelName('gemini-1.5-flash');
     else if (newProv === 'openrouter') setModelName('meta-llama/llama-3.3-70b-instruct:free');
     else if (newProv === 'ollama') setModelName('llama3');
@@ -305,6 +307,7 @@ export default function App() {
   }, [selectedStory?.story_id]);
 
   const hasValidKey =
+    provider === 'local_nlp' ||
     provider === 'ollama' ||
     apiKey.trim().length >= 8 ||
     (provider === 'groq' && envDefaults.has_env_groq) ||
@@ -648,20 +651,23 @@ export default function App() {
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Nhà cung cấp AI</label>
+                  <label className="form-label">Chọn Bộ máy Xử lý Ngôn ngữ &amp; AI</label>
                   <select
                     className="form-select"
                     value={provider}
                     onChange={(e) => handleProviderChange(e.target.value)}
                   >
-                    <option value="groq">Groq AI (Llama 3.3 70B - Tốc độ cao)</option>
-                    <option value="gemini">Google Gemini AI (Gemini 1.5 Flash)</option>
-                    <option value="openrouter">OpenRouter AI (Đa mô hình)</option>
-                    <option value="ollama">Ollama (Local Server trên máy)</option>
+                    <option value="local_nlp">
+                      Mô hình NLP &amp; Học máy Tích hợp trên máy (Chạy ngay - Không cần API Key)
+                    </option>
+                    <option value="groq">Groq Cloud AI (Llama 3.3 70B - Cần nhập API Key)</option>
+                    <option value="gemini">Google Gemini AI (Gemini 1.5 Flash - Cần nhập API Key)</option>
+                    <option value="openrouter">OpenRouter AI (Đa mô hình - Cần nhập API Key)</option>
+                    <option value="ollama">Ollama Local Server (localhost:11434)</option>
                   </select>
                 </div>
 
-                {provider !== 'ollama' && (
+                {provider !== 'ollama' && provider !== 'local_nlp' && (
                   <div className="form-group">
                     <label className="form-label">
                       Mã khóa API Key ({provider.toUpperCase()})
@@ -683,11 +689,12 @@ export default function App() {
                 )}
 
                 <div className="form-group">
-                  <label className="form-label">Tên Model sử dụng</label>
+                  <label className="form-label">Mô hình xử lý</label>
                   <input
                     type="text"
                     className="form-input"
                     value={modelName}
+                    disabled={provider === 'local_nlp'}
                     onChange={(e) => setModelName(e.target.value)}
                   />
                 </div>
@@ -702,13 +709,21 @@ export default function App() {
                     color: hasValidKey ? '#166534' : '#92400E',
                   }}
                 >
-                  {hasValidKey ? (
+                  {provider === 'local_nlp' ? (
                     <>
-                      <strong>Đã sẵn sàng kết nối AI:</strong> Bạn có thể tải tài liệu thực tế ở khung bên phải và bắt đầu phân tích.
+                      <strong>Sẵn sàng chạy trực tiếp trên máy:</strong> Sử dụng thuật toán tách câu NLP song ngữ và mô hình học máy <code>scikit-learn LinearSVC</code> để phân tích trực tiếp file <code>.docx / .txt</code> bạn tải lên mà không cần API Key.
+                    </>
+                  ) : provider === 'ollama' && !envDefaults.ollama_running ? (
+                    <>
+                      <strong>Lưu ý Ollama (cổng 11434):</strong> Máy hiện chưa bật dịch vụ Ollama ở cổng 11434, hệ thống sẽ tự động chuyển sang <strong>Mô hình NLP &amp; Học máy Tích hợp trên máy</strong> để phân tích tài liệu của bạn mà không bị lỗi kết nối.
+                    </>
+                  ) : hasValidKey ? (
+                    <>
+                      <strong>Đã sẵn sàng kết nối AI ({provider.toUpperCase()}):</strong> Bạn có thể tải tài liệu thực tế ở khung bên phải và bắt đầu phân tích.
                     </>
                   ) : (
                     <>
-                      <strong>Chưa có API Key:</strong> Vui lòng dán API Key thực tế của bạn vào ô trên để hệ thống gọi AI phân tích.
+                      <strong>Chưa có API Key:</strong> Vui lòng dán API Key vào ô trên, hoặc chuyển sang <em>"Mô hình NLP &amp; Học máy Tích hợp trên máy"</em> nếu muốn chạy trực tiếp không cần Key.
                     </>
                   )}
                 </div>

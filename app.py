@@ -15,7 +15,11 @@ from pydantic import BaseModel
 
 load_dotenv()
 
-from src.classifiers.llm_client import MultiLLMClient, is_real_api_key  # noqa: E402
+from src.classifiers.llm_client import (  # noqa: E402
+    MultiLLMClient,
+    is_ollama_running,
+    is_real_api_key,
+)
 from src.core.facade import RequirementAnalysisFacade  # noqa: E402
 
 app = FastAPI(
@@ -94,7 +98,7 @@ def _serialize_current_result(facade: RequirementAnalysisFacade) -> dict:
 
 @app.get("/api/config-defaults")
 def get_config_defaults():
-    """Trả về thông tin khóa API mặc định từ môi trường nếu hợp lệ."""
+    """Trả về thông tin khóa API mặc định từ môi trường và trạng thái Ollama."""
     groq_env = os.getenv("GROQ_API_KEY", "")
     gemini_env = os.getenv("GEMINI_API_KEY", "")
     openrouter_env = os.getenv("OPENROUTER_API_KEY", "")
@@ -102,12 +106,13 @@ def get_config_defaults():
         "has_env_groq": is_real_api_key(groq_env),
         "has_env_gemini": is_real_api_key(gemini_env),
         "has_env_openrouter": is_real_api_key(openrouter_env),
+        "ollama_running": is_ollama_running(),
     }
 
 
 @app.post("/api/analyze")
 async def analyze_requirements(
-    provider: str = Form("groq"),
+    provider: str = Form("local_nlp"),
     api_key: str = Form(""),
     model_name: str = Form(""),
     confidence_threshold: float = Form(0.75),
@@ -115,7 +120,7 @@ async def analyze_requirements(
     raw_text: str = Form(""),
     file: Optional[UploadFile] = File(None),
 ):
-    """Phân tích tài liệu yêu cầu thực tế qua đường ống AI 6 bước."""
+    """Phân tích tài liệu yêu cầu thực tế qua đường ống AI/NLP 6 bước."""
     clean_provider = provider.lower().strip()
     effective_key = api_key.strip()
 
@@ -129,10 +134,13 @@ async def analyze_requirements(
         if is_real_api_key(env_candidate):
             effective_key = env_candidate
 
-    if clean_provider != "ollama" and not is_real_api_key(effective_key):
+    if clean_provider in ("groq", "gemini", "openrouter") and not is_real_api_key(effective_key):
         raise HTTPException(
             status_code=400,
-            detail="Vui lòng nhập API Key hợp lệ (Groq / Google Gemini / OpenRouter) trước khi phân tích.",
+            detail=(
+                f"Bạn đang chọn cổng {clean_provider.upper()} nhưng chưa nhập API Key. "
+                "Vui lòng dán API Key hoặc chọn 'Mô hình NLP & Học máy Tích hợp trên máy' để chạy trực tiếp."
+            ),
         )
 
     if file is not None and file.filename:
@@ -150,8 +158,13 @@ async def analyze_requirements(
             detail="Vui lòng tải lên tệp tài liệu (.docx / .txt) hoặc dán nội dung yêu cầu cần phân tích.",
         )
 
+    # Nếu chọn local_nlp hoặc chọn ollama nhưng máy chưa cài/bật Ollama port 11434 -> chạy bộ NLP + ML tích hợp
+    use_cloud_llm = clean_provider in ("groq", "gemini", "openrouter")
+    use_ollama_live = (clean_provider == "ollama") and is_ollama_running()
+    active_llm_mode = use_cloud_llm or use_ollama_live
+
     llm_client = MultiLLMClient(
-        provider=clean_provider,
+        provider=clean_provider if active_llm_mode else "local_nlp",
         api_key=effective_key,
         model_name=model_name.strip() or None,
     )
@@ -159,8 +172,8 @@ async def analyze_requirements(
     state.facade = RequirementAnalysisFacade(
         llm_client=llm_client,
         confidence_threshold=confidence_threshold,
-        force_llm_mode=True,
-        strict_llm=True,
+        force_llm_mode=active_llm_mode,
+        strict_llm=use_cloud_llm,
     )
 
     try:

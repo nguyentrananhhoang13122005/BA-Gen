@@ -49,6 +49,20 @@ TERM_REPLACEMENTS_VI = {
     " ổn định": " đạt tỷ lệ thời gian hoạt động liên tục (Uptime) tối thiểu 99.9%",
 }
 
+TERM_REPLACEMENTS_EN = {
+    "user-friendly": "intuitive (completable by new users within 3 steps with SUS usability score >= 80)",
+    "easy to use": "completable within 2 minutes without prior training",
+    "fast": "responsive within 1.5 seconds under 1,000 concurrent users",
+    "quickly": "within a maximum latency of 2.0 seconds",
+    "rapidly": "within 1.5 seconds",
+    "secure": "protected with AES-256 encryption at rest and TLS 1.3 in transit",
+    "reliable": "maintaining at least 99.9% monthly uptime availability",
+    "scalable": "capable of scaling horizontally to 10,000 concurrent sessions",
+    "flexible": "configurable via modular rules without modifying core source code",
+    "robust": "fault-tolerant with automatic recovery within 5 seconds",
+    "efficient": "consuming less than 500MB RAM and under 30% CPU utilization",
+}
+
 
 class AmbiguityDetector:
     """Phát hiện lỗi chất lượng yêu cầu và đề xuất viết lại theo chuẩn SMART từ dữ liệu thật."""
@@ -132,14 +146,22 @@ class AmbiguityDetector:
                 rewritten = f"{rewritten} (đảm bảo thời gian xử lý dưới 2 giây với độ sẵn sàng 99.9%)"
             return f"{rewritten.strip()}."
         else:
-            for vt in req.vague_terms:
+            for vague_word, concrete_en in TERM_REPLACEMENTS_EN.items():
                 rewritten = re.sub(
-                    r"\b" + re.escape(vt) + r"\b",
-                    "within 1.5 seconds response time and 99.9% reliability",
+                    r"(?<!\w)" + re.escape(vague_word) + r"(?!\w)",
+                    concrete_en,
                     rewritten,
                     flags=re.IGNORECASE,
                 )
-            if req.missing_actor:
+            for vt in req.vague_terms:
+                if re.search(r"(?<!\w)" + re.escape(vt) + r"(?!\w)", rewritten, flags=re.IGNORECASE):
+                    rewritten = re.sub(
+                        r"(?<!\w)" + re.escape(vt) + r"(?!\w)",
+                        f"{vt} (verified within <= 1.5s latency and >= 99.9% SLA)",
+                        rewritten,
+                        flags=re.IGNORECASE,
+                    )
+            if req.missing_actor and not rewritten.lower().startswith(("the system", "users", "the tool", "business")):
                 rewritten = f"The system shall ensure that {rewritten[0].lower() + rewritten[1:]}"
             if req.req_type == "NFR" and req.missing_metric and not self.lexicon.has_metric(rewritten):
                 rewritten = f"{rewritten} within 1.5 seconds under 1,000 concurrent requests"

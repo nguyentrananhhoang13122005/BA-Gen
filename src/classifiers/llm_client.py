@@ -6,6 +6,7 @@ với kiểm tra khóa API thực tế nghiêm ngặt (loại bỏ hoàn toàn p
 
 import os
 import re
+import socket
 from typing import Optional
 from openai import OpenAI
 
@@ -41,6 +42,15 @@ INVALID_KEY_MARKERS = (
     "xxxx",
     "test_key_only",
 )
+
+
+def is_ollama_running(host: str = "127.0.0.1", port: int = 11434, timeout: float = 0.25) -> bool:
+    """Kiểm tra nhanh xem dịch vụ Ollama cục bộ có đang mở cổng 11434 trên máy hay không."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
 
 
 def is_real_api_key(api_key: Optional[str]) -> bool:
@@ -97,10 +107,10 @@ class MultiLLMClient:
         )
 
     def is_configured(self) -> bool:
-        """Kiểm tra xem khóa API thực sự đã được cấu hình hay chưa."""
+        """Kiểm tra xem khóa API thực sự hoặc dịch vụ Ollama đã sẵn sàng hay chưa."""
         if self.provider == "ollama":
-            return True
-        if self.provider == "offline":
+            return is_ollama_running()
+        if self.provider in ("offline", "local_nlp"):
             return False
         return is_real_api_key(self.api_key)
 

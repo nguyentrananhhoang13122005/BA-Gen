@@ -85,8 +85,8 @@ class RequirementSegmenter:
                 return match.group(0).replace(".", "__ABBREV_DOT__")
             protected_text = re.sub(abbrev, replace_abbrev, protected_text, flags=re.IGNORECASE)
 
-        # 3. Tách theo dấu kết thúc câu (. ! ? \n ;)
-        sentences = re.split(r"(?<=[.!?;\n])\s+", protected_text)
+        # 3. Tách theo dấu kết thúc câu (. ! ? ;) hoặc xuống dòng (\n+)
+        sentences = re.split(r"(?<=[.!?;])\s+|\n+", protected_text)
 
         candidate_requirements = []
         for s in sentences:
@@ -95,6 +95,18 @@ class RequirementSegmenter:
             restored = restored.strip(" \t\n\r.;")
             if not restored:
                 continue
+
+            # Bỏ qua dòng tiêu đề đề bài hoặc dòng chủ đề liên quan không phải yêu cầu
+            if re.match(r"^(Topic\s+\d+\s*[—\-:]|Related\s+topics\s*:)", restored, flags=re.IGNORECASE):
+                continue
+
+            # Cắt bỏ nhãn mở đầu đoạn như "Objective:", "Problem description:", "Mục tiêu:"
+            restored = re.sub(
+                r"^(Objective|Problem\s+description|Mục\s+tiêu|Mô\s+tả\s+bài\s+toán)\s*:\s*",
+                "",
+                restored,
+                flags=re.IGNORECASE,
+            ).strip()
 
             words = restored.split()
             # Yêu cầu REQ-1.4: Lọc bỏ các mảnh văn bản nhỏ hơn 4 từ
