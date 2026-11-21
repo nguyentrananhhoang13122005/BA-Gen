@@ -43,6 +43,7 @@ PROVIDER_ALIASES = {"offline": "local_nlp"}
 DEFAULT_PROVIDER = "groq"
 DEFAULT_CONFIDENCE_THRESHOLD = 0.75
 DEFAULT_DATABASE_PATH = "reqassist.db"
+DEFAULT_SESSION_TTL_SECONDS = 24 * 60 * 60
 
 
 def _parse_confidence_threshold(raw_value: Optional[str], default: float) -> float:
@@ -58,6 +59,28 @@ def _parse_confidence_threshold(raw_value: Optional[str], default: float) -> flo
         logger.warning("CONFIDENCE_THRESHOLD=%r ngoài khoảng [0, 1], dùng mặc định %.2f.", raw_value, default)
         return default
     return value
+
+
+def _parse_positive_int(raw_value: Optional[str], default: int) -> int:
+    """Đọc số nguyên dương, fallback kèm cảnh báo nếu sai."""
+    if raw_value is None or str(raw_value).strip() == "":
+        return default
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        logger.warning("Giá trị %r không phải số nguyên, dùng mặc định %d.", raw_value, default)
+        return default
+    if value <= 0:
+        logger.warning("Giá trị %r phải dương, dùng mặc định %d.", raw_value, default)
+        return default
+    return value
+
+
+def _parse_bool(raw_value: Optional[str], default: bool = False) -> bool:
+    """Đọc cờ boolean từ env (1/true/yes/on)."""
+    if raw_value is None or str(raw_value).strip() == "":
+        return default
+    return str(raw_value).strip().lower() in ("1", "true", "yes", "on")
 
 
 def _parse_provider(raw_value: Optional[str]) -> str:
@@ -81,6 +104,9 @@ class AppConfig:
     models: Mapping[str, str] = field(
         default_factory=lambda: {name: cfg["default_model"] for name, cfg in PROVIDER_CONFIGS.items()}
     )
+    secret_key: Optional[str] = None
+    session_ttl_seconds: int = DEFAULT_SESSION_TTL_SECONDS
+    session_cookie_secure: bool = False
 
     def model_for(self, provider: str) -> str:
         """Trả về model đã cấu hình cho provider, fallback về default của provider đó."""
@@ -100,6 +126,7 @@ class AppConfig:
             models[name] = raw_model or provider_cfg["default_model"]
 
         database_path = (env.get("DATABASE_PATH") or "").strip() or DEFAULT_DATABASE_PATH
+        secret_key = (env.get("SECRET_KEY") or "").strip() or None
 
         return cls(
             default_provider=_parse_provider(env.get("DEFAULT_PROVIDER")),
@@ -108,6 +135,11 @@ class AppConfig:
             ),
             database_path=database_path,
             models=models,
+            secret_key=secret_key,
+            session_ttl_seconds=_parse_positive_int(
+                env.get("SESSION_TTL_SECONDS"), DEFAULT_SESSION_TTL_SECONDS
+            ),
+            session_cookie_secure=_parse_bool(env.get("SESSION_COOKIE_SECURE")),
         )
 
 
