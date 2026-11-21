@@ -74,26 +74,18 @@ class DocxDocumentParser(IDocumentParser):
 
         extracted_lines = []
 
-        # 1. Đọc các đoạn văn (paragraphs)
-        for p in doc.paragraphs:
-            text = p.text.strip()
-            if text:
-                extracted_lines.append(text)
-
-        # 2. Đọc nội dung từ các bảng biểu (tables)
         table_header_markers = {
             "mã fr", "mô tả yêu cầu chi tiết", "độ ưu tiên",
             "vai trò (role)", "mô tả & phạm vi quyền hạn chính",
             "stt", "requirement id", "priority",
         }
         priority_suffixes = {
-            "cao (high)", "trung bình (medium)", "thấp (low)",
-            "high", "medium", "low", "cao", "trung bình", "thấp",
+            "cao (high)", "cao(high)", "trung bình (medium)", "trung bình(medium)",
+            "thấp (low)", "thấp(low)", "high", "medium", "low", "cao", "trung bình", "thấp",
         }
 
-        for table in doc.tables:
-            for row in table.rows:
-                # Làm phẳng dấu xuống dòng (\n) bên trong từng ô của bảng thành khoảng trắng
+        def _process_table(table_obj):
+            for row in table_obj.rows:
                 row_texts = [
                     " ".join(cell.text.split())
                     for cell in row.cells
@@ -103,18 +95,35 @@ class DocxDocumentParser(IDocumentParser):
                 if not unique_cells:
                     continue
 
-                # Bỏ qua dòng tiêu đề bảng (Table Header Row)
                 joined_lower = " | ".join(unique_cells).lower()
+                # Bỏ qua bảng bìa tài liệu (Cover Table)
+                if "tài liệu phân tích nghiệp vụ" in joined_lower and "phiên bản" in joined_lower:
+                    continue
+                # Bỏ qua dòng tiêu đề bảng (Table Header Row)
                 if sum(1 for m in table_header_markers if m in joined_lower) >= 2:
                     continue
 
-                # Bỏ cột Độ ưu tiên ở cuối dòng bảng nếu có
                 if len(unique_cells) >= 3 and unique_cells[-1].lower() in priority_suffixes:
                     unique_cells = unique_cells[:-1]
 
-                # Giữ toàn bộ dòng bảng là 1 yêu cầu hoàn chỉnh (ngăn việc tách rời từng câu nhỏ trong cùng 1 ô)
                 merged_row = " — ".join(unique_cells).replace(". ", "; ")
                 extracted_lines.append(merged_row)
+
+        # Đọc paragraphs và tables theo đúng thứ tự xuất hiện từ trên xuống dưới trong tài liệu Word
+        from docx.oxml.table import CT_Tbl
+        from docx.oxml.text.paragraph import CT_P
+        from docx.table import Table
+        from docx.text.paragraph import Paragraph
+
+        for child in doc.element.body.iterchildren():
+            if isinstance(child, CT_P):
+                p = Paragraph(child, doc)
+                text = p.text.strip()
+                if text:
+                    extracted_lines.append(text)
+            elif isinstance(child, CT_Tbl):
+                t = Table(child, doc)
+                _process_table(t)
 
         full_text = "\n".join(extracted_lines)
         return unicodedata.normalize("NFC", full_text.strip())

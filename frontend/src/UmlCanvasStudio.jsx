@@ -166,6 +166,7 @@ function buildDualSideGraph(filteredStories = [], projectName = 'Hệ thống Ph
       id: ucId,
       code: `UC-${String(idx + 1).padStart(2, '0')}`,
       name: ucName,
+      actorName: roleName,
       side: actor?.side || 'left',
       x: 0,
       y: 0,
@@ -185,47 +186,70 @@ function buildDualSideGraph(filteredStories = [], projectName = 'Hệ thống Ph
     }
   });
 
+  // Sắp xếp Use Case ở mỗi cột gom theo thứ tự từng Actor để các đường nối của 2 Actor cùng bên KHÔNG BAO GIỜ cắt chéo nhau!
+  const leftActorOrder = Array.from(leftActorSet);
+  const rightActorOrder = Array.from(rightActorSet);
+
+  leftUcs.sort(
+    (a, b) => leftActorOrder.indexOf(a.actorName) - leftActorOrder.indexOf(b.actorName)
+  );
+  rightUcs.sort(
+    (a, b) => rightActorOrder.indexOf(a.actorName) - rightActorOrder.indexOf(b.actorName)
+  );
+
   // Nếu chỉ có 1 bên có Actor (ví dụ lọc theo 1 Actor), xếp 1 cột chính giữa khung hệ thống (x = 510)
   const singleSideMode = rightUcs.length === 0;
 
   if (singleSideMode) {
     leftUcs.forEach((uc, i) => {
       uc.x = 510;
-      uc.y = 120 + i * 92;
+      uc.y = 115 + i * 88;
     });
   } else {
     // Cột Trái (x = 365) nối thẳng với Actor Trái (x = 88)
     leftUcs.forEach((uc, i) => {
       uc.x = 365;
-      uc.y = 120 + i * 96;
+      uc.y = 115 + i * 92;
     });
     // Cột Phải (x = 655) nối thẳng với Actor Phải (x = 932)
     rightUcs.forEach((uc, i) => {
       uc.x = 655;
-      uc.y = 120 + i * 96;
+      uc.y = 115 + i * 92;
     });
   }
 
   const maxRows = Math.max(leftUcs.length, rightUcs.length, 1);
-  const totalH = Math.max(120 + maxRows * 96 + 60, 440);
+  const totalH = Math.max(115 + maxRows * 92 + 65, 440);
 
-  // Căn giữa vị trí Y của từng Actor theo đúng tâm trung bình các Use Case mà Actor đó nối tới!
+  // Đặt tọa độ Y của từng Actor đúng bằng trung bình cộng Y của nhóm Use Case thuộc Actor đó!
   const actors = Array.from(actorMap.values());
-  const placeActorsOnSide = (sideActors) => {
+  const placeActorsAlignedWithUcs = (sideActors, sideUcs) => {
     if (sideActors.length === 0) return;
-    if (sideActors.length === 1) {
-      sideActors[0].y = Math.round(totalH / 2);
-      return;
-    }
-    const stepY = Math.min(180, Math.max(130, (totalH - 150) / (sideActors.length - 1)));
-    const startY = Math.round((totalH - stepY * (sideActors.length - 1)) / 2);
-    sideActors.forEach((a, i) => {
-      a.y = startY + i * stepY;
+    sideActors.forEach((actor) => {
+      const myUcs = sideUcs.filter((u) => u.actorName === actor.name);
+      if (myUcs.length > 0) {
+        const avgY = myUcs.reduce((sum, u) => sum + u.y, 0) / myUcs.length;
+        actor.y = Math.round(avgY);
+      } else {
+        actor.y = Math.round(totalH / 2);
+      }
     });
+    // Đảm bảo khoảng cách tối thiểu 125px giữa 2 Actor cùng bên để nhãn tên không đè lên nhau
+    for (let i = 1; i < sideActors.length; i++) {
+      if (sideActors[i].y - sideActors[i - 1].y < 125) {
+        sideActors[i].y = sideActors[i - 1].y + 125;
+      }
+    }
   };
 
-  placeActorsOnSide(actors.filter((a) => a.side === 'left'));
-  placeActorsOnSide(actors.filter((a) => a.side === 'right'));
+  placeActorsAlignedWithUcs(
+    actors.filter((a) => a.side === 'left'),
+    leftUcs
+  );
+  placeActorsAlignedWithUcs(
+    actors.filter((a) => a.side === 'right'),
+    rightUcs
+  );
 
   return {
     systemTitle: cleanSystemTitle(projectName),

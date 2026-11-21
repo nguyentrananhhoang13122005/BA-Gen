@@ -47,17 +47,50 @@ class RequirementSegmenter:
 
     @classmethod
     def clean_bullet_points(cls, text: str) -> str:
-        """Loại bỏ ký hiệu đầu dòng như bullet points, số thứ tự (1., a), •, -)."""
+        """Loại bỏ ký hiệu đầu dòng, chuẩn hóa bảng Markdown (| ... |) và giữ nguyên câu hoàn chỉnh."""
         lines = text.splitlines()
         cleaned_lines = []
+        table_header_markers = (
+            "mã fr", "mô tả yêu cầu chi tiết", "độ ưu tiên",
+            "vai trò (role)", "mô tả & phạm vi quyền hạn chính",
+        )
+        priority_suffixes = {
+            "cao (high)", "cao(high)", "trung bình (medium)", "trung bình(medium)",
+            "thấp (low)", "thấp(low)", "high", "medium", "low", "cao", "trung bình", "thấp",
+        }
+
         for line in lines:
             trimmed = line.strip()
             if not trimmed:
                 continue
-            # Xóa các tiền tố đầu dòng: 1., 1), a), -, *, •, >
-            trimmed = re.sub(r"^[\s•\-\*\>]+", "", trimmed)
-            trimmed = re.sub(r"^\d+[\.\)]\s*", "", trimmed)
-            trimmed = re.sub(r"^[a-zA-Z][\.\)]\s*", "", trimmed)
+
+            # Xử lý dòng bảng dạng pipe "| ô 1 | ô 2 | ô 3 |" khi người dùng dán từ Word/Markdown
+            if trimmed.startswith("|") and trimmed.endswith("|"):
+                cells = [
+                    " ".join(c.replace("\\|", "|").split())
+                    for c in trimmed.strip("|").split("|")
+                    if c.strip() and not re.match(r"^[\-:]+$", c.strip())
+                ]
+                if not cells:
+                    continue
+                joined_low = " | ".join(cells).lower()
+                if "tài liệu phân tích nghiệp vụ" in joined_low:
+                    continue
+                if sum(1 for m in table_header_markers if m in joined_low) >= 2:
+                    continue
+                if len(cells) >= 3 and cells[-1].lower() in priority_suffixes:
+                    cells = cells[:-1]
+                trimmed = " — ".join(cells).replace(". ", "; ")
+            else:
+                # Xóa các tiền tố đầu dòng: 1., 1.1., a), -, *, •, >
+                trimmed = re.sub(r"^[\s•\-\*\>]+", "", trimmed)
+                trimmed = re.sub(r"^\d+(?:\.\d+)*[\.\)]\s*", "", trimmed)
+                trimmed = re.sub(r"^[a-zA-Z][\.\)]\s*", "", trimmed)
+
+            # Nếu là dòng bảng FR-xx hoặc quy tắc BR-xx có nhiều câu bên trong, nối bằng '; ' để không bị cắt đôi
+            if re.match(r"^(FR-\d+|BR-\d+)\b", trimmed, flags=re.IGNORECASE):
+                trimmed = trimmed.replace(". ", "; ")
+
             if trimmed:
                 cleaned_lines.append(trimmed)
         return "\n".join(cleaned_lines)
@@ -122,14 +155,28 @@ class RequirementSegmenter:
         # Lưu ý: giữ dấu chấm phẩy (;) để không cắt vụn 1 dòng bảng biểu thành nhiều mảnh rời rạc
         sentences = re.split(r"(?<=[.!?])\s+|\n+", protected_text)
 
+        # Kiểm tra xem tài liệu có phải là BRD có bảng FR-01..FR-xx chi tiết hay không
+        has_structured_fr = bool(re.search(r"\bFR-0?1\b", normalized, flags=re.IGNORECASE))
+
         non_req_heading_pattern = re.compile(
             r"^(Topic\s+\d+\s*[—\-:]|Related\s+topics\s*:|"
             r"TÀI\s+LIỆU\s+PHÂN\s+TÍCH\s+NGHIỆP\s+VỤ|HỆ\s+THỐNG\s+QUẢN\s+LÝ\s+|"
             r"TỔNG\s+QUAN\s+DỰ\s+ÁN|ĐỐI\s+TƯỢNG\s+SỬ\s+DỤNG\s*&\s*PHÂN\s+QUYỀN|"
             r"ĐẶC\s+TẢ\s+YÊU\s+CẦU\s+CHỨC\s+NĂNG|QUY\s+TẮC\s+NGHIỆP\s+VỤ\s+CỐT\s+LÕI|"
             r"YÊU\s+CẦU\s+PHI\s+CHỨC\s+NĂNG|Mục\s+tiêu\s+chính\s*\(|"
-            r"Phạm\s+vi\s+hệ\s+thống\s*\(|Ngoài\s+phạm\s+vi\s*\(Out-of-Scope\)|"
+            r"Phạm\s+vi\s+hệ\s+thống\s*\(|Trong\s+phạm\s+vi\s*\(In-Scope\)|"
+            r"Ngoài\s+phạm\s+vi\s*\(Out-of-Scope\)|"
             r"Phiên\s+bản\s*:\s*\d|Vai\s+trò\s*\(Role\)\s*[—\-]|Mã\s+FR\s*[—\-])",
+            flags=re.IGNORECASE,
+        )
+
+        # Các câu mô tả mục tiêu tổng quan chương 1 trong BRD (đã được cụ thể hóa ở bảng FR-01..FR-06)
+        brd_overview_intro_pattern = re.compile(
+            r"^(Hệ\s+thống\s+.*\s+được\s+xây\s+dựng\s+nhằm\s+số\s+hóa|"
+            r"Tập\s+trung\s+hóa\s+dữ\s+liệu\s*:|"
+            r"Tự\s+động\s+hóa\s+vận\s+hành\s*:|"
+            r"Minh\s+bạch\s*&\s*Tự\s+phục\s+vụ\s*\(ESS\)\s*:|"
+            r"Hỗ\s+trợ\s+ra\s+quyết\s+định\s*:)",
             flags=re.IGNORECASE,
         )
 
@@ -141,8 +188,12 @@ class RequirementSegmenter:
             if not restored:
                 continue
 
-            # Bỏ qua dòng tiêu đề tài liệu, tiêu đề chương mục, metadata hoặc phạm vi loại trừ
+            # Bỏ qua dòng tiêu đề tài liệu, tiêu đề chương mục, metadata hoặc phạm vi
             if non_req_heading_pattern.match(restored):
+                continue
+
+            # Nếu tài liệu đã có bảng đặc tả FR-01..FR-xx, bỏ qua đoạn văn giới thiệu tổng quan ở Chương 1
+            if has_structured_fr and brd_overview_intro_pattern.match(restored):
                 continue
 
             # Bỏ qua dòng toàn chữ IN HOA ngắn (tiêu đề chương mục trong Word)

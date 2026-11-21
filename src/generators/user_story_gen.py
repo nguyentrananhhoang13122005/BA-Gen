@@ -105,16 +105,17 @@ class UserStoryGenerator:
 
         # 1. Nếu là dòng bảng đặc tả có dạng "FR-01 — Tên Phân hệ — Mô tả..."
         fr_table_match = re.match(
-            r"^(?:Hệ thống / Người dùng thực hiện:\s*)?(?:FR-\d+)\s*[—\-:]\s*([^—\-:]+?)(?:\s*[—\-:]\s*(.+))?$",
+            r"^(?:Hệ thống / Người dùng thực hiện:\s*)?(FR-\d+)\s*[—\-:]\s*([^—\-:]+?)(?:\s*[—\-:]\s*(.+))?$",
             raw,
             flags=re.IGNORECASE,
         )
         if fr_table_match:
-            module_name = re.sub(r"\([^)]*\)", "", fr_table_match.group(1)).strip()
+            fr_code = fr_table_match.group(1).upper()
+            module_name = re.sub(r"\([^)]*\)", "", fr_table_match.group(2)).strip()
             if module_name:
-                if not re.match(r"^(Quản lý|Thiết lập|Xử lý|Xem|Tạo|Tính)\b", module_name, flags=re.IGNORECASE):
-                    return f"Quản lý {module_name}"
-                return module_name
+                if not re.match(r"^(Quản lý|Thiết lập|Xử lý|Xem|Tạo|Tính|Chấm)\b", module_name, flags=re.IGNORECASE):
+                    return f"{fr_code}: Quản lý {module_name}"
+                return f"{fr_code}: {module_name}"
 
         # 2. Nếu là dòng định nghĩa Vai trò trong bảng Stakeholder ("Quản trị viên hệ thống (System Admin) — Cấu hình...")
         role_table_match = re.match(
@@ -123,7 +124,15 @@ class UserStoryGenerator:
             flags=re.IGNORECASE,
         )
         if role_table_match:
-            raw = role_table_match.group(2).strip()
+            role_key = role_table_match.group(1).lower()
+            if "quản trị" in role_key:
+                return "Cấu hình hệ thống & Phân quyền RBAC"
+            if "chuyên viên nhân sự" in role_key:
+                return "Quản lý hợp đồng, Ca làm & Bảng lương"
+            if "quản lý trực tiếp" in role_key:
+                return "Phê duyệt đơn nghỉ phép & Tăng ca (OT)"
+            if "nhân viên" in role_key:
+                return "Tra cứu ngày công, phép & Phiếu lương"
 
         # 3. Xóa các cụm giải thích trong ngoặc đơn (VD: "(for example ...)", "(Core HR)")
         cleaned = re.sub(r"\([^)]*\)", "", raw).strip()
@@ -199,55 +208,73 @@ class UserStoryGenerator:
     def _extract_story_from_text(self, req: RequirementDTO, story_id: str, lang: str = "vi") -> UserStoryDTO:
         """Bóc tách trực tiếp chủ ngữ, vị ngữ và đối tượng từ câu yêu cầu thực tế."""
         text = req.raw_text.strip().rstrip(".")
+        low_text = text.lower()
 
-        # Loại bỏ các cụm từ ghép dễ gây nhận nhầm Actor (VD: "Hệ thống Quản lý", "Quản lý hồ sơ", "user-friendly")
-        actor_scan_text = re.sub(
-            r"\b(user[-\s](friendly|stories|story|interface|experience|guide|manual)|"
-            r"hệ\s+thống\s+quản\s+lý|quản\s+lý\s+(hồ\s+sơ|nhân\s+sự|nhân\s+viên|ca\s+làm|nghỉ\s+phép|"
-            r"hợp\s+đồng|tài\s+khoản|đơn\s+hàng|sản\s+phẩm|kho))\b",
-            "",
-            text,
-            flags=re.IGNORECASE,
-        )
-
-        # Trích xuất chủ thể thực tế có trong câu (Ưu tiên cụm đầy đủ trước)
-        actor_match = re.search(
-            r"\b(quản\s+trị\s+viên\s+hệ\s+thống|quản\s+trị\s+viên|system\s+admin|"
-            r"chuyên\s+viên\s+nhân\s+sự|bộ\s+phận\s+c&b|nhân\s+sự\s+thuộc\s+bộ\s+phận\s+c&b|hr\s*/\s*c&b|\bhr\b|"
-            r"quản\s+lý\s+trực\s+tiếp|người\s+quản\s+lý|cấp\s+quản\s+lý|line\s+manager|quản\s+lý\s+duyệt|"
-            r"business\s+analysts?|requirements\s+engineers?|"
-            r"khách\s+hàng|người\s+mua|người\s+bán|nhân\s+viên|employee|"
-            r"học\s+viên|giảng\s+viên|bác\s+sĩ|bệnh\s+nhân|kế\s+toán|"
-            r"customers?|admins?|managers?|buyers?|sellers?|students?|users?|người\s+dùng)\b",
-            actor_scan_text,
-            flags=re.IGNORECASE,
-        )
-
-        if actor_match:
-            low_actor = " ".join(actor_match.group(1).split()).lower()
-            if low_actor in ("quản trị viên hệ thống", "quản trị viên", "system admin", "admin", "admins"):
-                role = "Quản trị viên hệ thống" if lang == "vi" else "System Administrator"
-            elif low_actor in ("chuyên viên nhân sự", "bộ phận c&b", "nhân sự thuộc bộ phận c&b", "hr / c&b", "hr"):
+        # 1. Kiểm tra nếu câu bắt đầu trực tiếp bằng Vai trò trong bảng Stakeholder
+        if re.match(r"^quản\s+trị\s+viên\s+hệ\s+thống", low_text):
+            role = "Quản trị viên hệ thống"
+        elif re.match(r"^chuyên\s+viên\s+nhân\s+sự", low_text):
+            role = "Chuyên viên Nhân sự (HR)"
+        elif re.match(r"^quản\s+lý\s+trực\s+tiếp", low_text):
+            role = "Quản lý trực tiếp"
+        elif re.match(r"^nhân\s+viên\s*\(employee\)", low_text):
+            role = "Nhân viên"
+        # 2. Kiểm tra nếu câu là dòng đặc tả FR-01..FR-xx trong bảng Functional Requirements
+        elif re.match(r"^(?:hệ thống / người dùng thực hiện:\s*)?fr-\d+\b", low_text):
+            if any(k in low_text for k in ("hồ sơ nhân sự", "core hr", "cơ cấu tổ chức", "tính lương", "payroll", "hợp đồng")):
                 role = "Chuyên viên Nhân sự (HR)"
-            elif low_actor in (
-                "quản lý trực tiếp", "người quản lý", "cấp quản lý",
-                "line manager", "quản lý duyệt", "manager", "managers",
-            ):
-                role = "Quản lý trực tiếp" if lang == "vi" else "Line Manager"
-            elif low_actor in ("nhân viên", "employee"):
-                role = "Nhân viên" if lang == "vi" else "Employee"
-            elif low_actor in ("business analysts", "business analyst", "requirements engineers", "requirements engineer"):
-                role = "Business Analyst"
-            elif low_actor in ("users", "user", "người dùng"):
-                role = "Người dùng" if lang == "vi" else "Business Analyst"
-            elif low_actor in ("khách hàng", "người mua", "customer", "customers", "buyer", "buyers"):
-                role = "Khách hàng" if lang == "vi" else "Customer"
+            elif any(k in low_text for k in ("báo cáo", "dashboard", "biến động")):
+                role = "Quản lý trực tiếp"
             else:
-                role = low_actor[0].upper() + low_actor[1:]
-        elif req.req_type == "NFR":
-            role = "Quản trị viên hệ thống" if lang == "vi" else "System Administrator"
+                role = "Nhân viên"
         else:
-            role = "Nhân viên" if lang == "vi" else "Business Analyst"
+            # 3. Quét tác nhân trong văn bản thông thường
+            actor_scan_text = re.sub(
+                r"\b(user[-\s](friendly|stories|story|interface|experience|guide|manual)|"
+                r"hệ\s+thống\s+quản\s+lý|quản\s+lý\s+(hồ\s+sơ|nhân\s+sự|nhân\s+viên|ca\s+làm|nghỉ\s+phép|"
+                r"hợp\s+đồng|tài\s+khoản|đơn\s+hàng|sản\s+phẩm|kho))\b",
+                "",
+                text,
+                flags=re.IGNORECASE,
+            )
+
+            actor_match = re.search(
+                r"\b(quản\s+trị\s+viên\s+hệ\s+thống|quản\s+trị\s+viên|system\s+admin|"
+                r"chuyên\s+viên\s+nhân\s+sự|bộ\s+phận\s+c&b|nhân\s+sự\s+thuộc\s+bộ\s+phận\s+c&b|hr\s*/\s*c&b|\bhr\b|"
+                r"quản\s+lý\s+trực\s+tiếp|người\s+quản\s+lý|cấp\s+quản\s+lý|line\s+manager|quản\s+lý\s+duyệt|"
+                r"business\s+analysts?|requirements\s+engineers?|"
+                r"khách\s+hàng|người\s+mua|người\s+bán|nhân\s+viên|employee|"
+                r"học\s+viên|giảng\s+viên|bác\s+sĩ|bệnh\s+nhân|kế\s+toán|"
+                r"customers?|admins?|managers?|buyers?|sellers?|students?|users?|người\s+dùng)\b",
+                actor_scan_text,
+                flags=re.IGNORECASE,
+            )
+
+            if actor_match:
+                low_actor = " ".join(actor_match.group(1).split()).lower()
+                if low_actor in ("quản trị viên hệ thống", "quản trị viên", "system admin", "admin", "admins"):
+                    role = "Quản trị viên hệ thống" if lang == "vi" else "System Administrator"
+                elif low_actor in ("chuyên viên nhân sự", "bộ phận c&b", "nhân sự thuộc bộ phận c&b", "hr / c&b", "hr"):
+                    role = "Chuyên viên Nhân sự (HR)"
+                elif low_actor in (
+                    "quản lý trực tiếp", "người quản lý", "cấp quản lý",
+                    "line manager", "quản lý duyệt", "manager", "managers",
+                ):
+                    role = "Quản lý trực tiếp" if lang == "vi" else "Line Manager"
+                elif low_actor in ("nhân viên", "employee"):
+                    role = "Nhân viên" if lang == "vi" else "Employee"
+                elif low_actor in ("business analysts", "business analyst", "requirements engineers", "requirements engineer"):
+                    role = "Business Analyst"
+                elif low_actor in ("users", "user", "người dùng"):
+                    role = "Người dùng" if lang == "vi" else "Business Analyst"
+                elif low_actor in ("khách hàng", "người mua", "customer", "customers", "buyer", "buyers"):
+                    role = "Khách hàng" if lang == "vi" else "Customer"
+                else:
+                    role = low_actor[0].upper() + low_actor[1:]
+            elif req.req_type == "NFR":
+                role = "Quản trị viên hệ thống" if lang == "vi" else "System Administrator"
+            else:
+                role = "Nhân viên" if lang == "vi" else "Business Analyst"
 
         clean_goal = re.sub(
             r"^(Hệ thống phải cho phép|Hệ thống cho phép|Ứng dụng phải hỗ trợ|Hệ thống hỗ trợ|"
