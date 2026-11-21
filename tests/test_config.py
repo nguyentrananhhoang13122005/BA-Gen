@@ -101,6 +101,16 @@ def test_config_reads_auth_cors_and_rate_limits():
     assert config.session_cookie_secure is True
 
 
+def test_config_reads_job_settings():
+    config = AppConfig.from_env({
+        "MAX_CONCURRENT_JOBS": "4",
+        "JOB_TTL_SECONDS": "120",
+    })
+
+    assert config.max_concurrent_jobs == 4
+    assert config.job_ttl_seconds == 120
+
+
 def test_config_cors_wildcard_falls_back_to_defaults():
     assert AppConfig.from_env({"CORS_ORIGINS": "*"}).cors_origins == DEFAULT_CORS_ORIGINS
     assert AppConfig.from_env({}).app_password is None

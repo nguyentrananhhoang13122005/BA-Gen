@@ -50,6 +50,8 @@ DEFAULT_MAX_REQUIREMENTS = 500
 DEFAULT_CORS_ORIGINS = ("http://localhost:5173", "http://127.0.0.1:5173")
 DEFAULT_ANALYZE_RATE_LIMIT_PER_MINUTE = 5
 DEFAULT_AUTH_RATE_LIMIT_PER_MINUTE = 5
+DEFAULT_MAX_CONCURRENT_JOBS = 2
+DEFAULT_JOB_TTL_SECONDS = 60 * 60
 
 
 def _parse_confidence_threshold(raw_value: Optional[str], default: float) -> float:
@@ -136,6 +138,8 @@ class AppConfig:
     cors_origins: tuple = DEFAULT_CORS_ORIGINS
     analyze_rate_limit_per_minute: int = DEFAULT_ANALYZE_RATE_LIMIT_PER_MINUTE
     auth_rate_limit_per_minute: int = DEFAULT_AUTH_RATE_LIMIT_PER_MINUTE
+    max_concurrent_jobs: int = DEFAULT_MAX_CONCURRENT_JOBS
+    job_ttl_seconds: int = DEFAULT_JOB_TTL_SECONDS
 
     def model_for(self, provider: str) -> str:
         """Trả về model đã cấu hình cho provider, fallback về default của provider đó."""
@@ -188,6 +192,12 @@ class AppConfig:
             ),
             auth_rate_limit_per_minute=_parse_positive_int(
                 env.get("AUTH_RATE_LIMIT_PER_MINUTE"), DEFAULT_AUTH_RATE_LIMIT_PER_MINUTE
+            ),
+            max_concurrent_jobs=_parse_positive_int(
+                env.get("MAX_CONCURRENT_JOBS"), DEFAULT_MAX_CONCURRENT_JOBS
+            ),
+            job_ttl_seconds=_parse_positive_int(
+                env.get("JOB_TTL_SECONDS"), DEFAULT_JOB_TTL_SECONDS
             ),
         )
 
