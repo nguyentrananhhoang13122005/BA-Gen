@@ -152,6 +152,7 @@ export default function App() {
   const [provider, setProvider] = useState('local_nlp');
   const [apiKey, setApiKey] = useState('');
   const [modelName, setModelName] = useState('TF-IDF + LinearSVC (Bilingual NLP)');
+  const [confidenceThreshold, setConfidenceThreshold] = useState(0.75);
   const [envDefaults, setEnvDefaults] = useState({});
 
   // Document Input state (Real user data only)
@@ -196,7 +197,24 @@ export default function App() {
   useEffect(() => {
     fetch('/api/config-defaults')
       .then((r) => r.json())
-      .then((d) => setEnvDefaults(d))
+      .then((d) => {
+        setEnvDefaults(d);
+        if (typeof d.confidence_threshold === 'number') {
+          setConfidenceThreshold(d.confidence_threshold);
+        }
+        const defaultProvider = d.default_provider;
+        const isReady =
+          defaultProvider === 'local_nlp' ||
+          defaultProvider === 'offline' ||
+          (defaultProvider === 'ollama' && d.ollama_running) ||
+          (defaultProvider === 'groq' && d.has_env_groq) ||
+          (defaultProvider === 'gemini' && d.has_env_gemini) ||
+          (defaultProvider === 'openrouter' && d.has_env_openrouter);
+        if (isReady && defaultProvider && defaultProvider !== 'offline') {
+          setProvider(defaultProvider);
+          setModelName(d.models?.[defaultProvider] || '');
+        }
+      })
       .catch(() => {});
   }, []);
 
@@ -205,6 +223,7 @@ export default function App() {
     setProvider(newProv);
     setErrorMsg('');
     if (newProv === 'local_nlp') setModelName('TF-IDF + LinearSVC (Bilingual NLP)');
+    else if (envDefaults.models?.[newProv]) setModelName(envDefaults.models[newProv]);
     else if (newProv === 'groq') setModelName('llama-3.3-70b-versatile');
     else if (newProv === 'gemini') setModelName('gemini-1.5-flash');
     else if (newProv === 'openrouter') setModelName('meta-llama/llama-3.3-70b-instruct:free');
@@ -337,6 +356,7 @@ export default function App() {
       formData.append('provider', provider);
       formData.append('api_key', apiKey.trim());
       formData.append('model_name', modelName.trim());
+      formData.append('confidence_threshold', String(confidenceThreshold));
       formData.append('project_name', projectName.trim());
       formData.append('raw_text', rawText);
       if (selectedFile) {
@@ -697,6 +717,25 @@ export default function App() {
                     disabled={provider === 'local_nlp'}
                     onChange={(e) => setModelName(e.target.value)}
                   />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label" htmlFor="confidence-threshold">
+                    Ngưỡng tin cậy để chuyển sang LLM: {Math.round(confidenceThreshold * 100)}%
+                  </label>
+                  <input
+                    id="confidence-threshold"
+                    type="range"
+                    className="form-input"
+                    min="0.5"
+                    max="0.99"
+                    step="0.01"
+                    value={confidenceThreshold}
+                    onChange={(e) => setConfidenceThreshold(Number(e.target.value))}
+                  />
+                  <div style={{ fontSize: '0.78rem', color: '#64748B', marginTop: '4px' }}>
+                    Câu có độ tin cậy của mô hình máy học thấp hơn ngưỡng này sẽ được gửi sang LLM (nếu đã kết nối).
+                  </div>
                 </div>
 
                 <div
