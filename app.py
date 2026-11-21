@@ -7,7 +7,7 @@ hoạt động 100% trên dữ liệu thật của người dùng và kết nố
 import os
 from typing import Optional
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -22,6 +22,7 @@ from src.classifiers.llm_client import (  # noqa: E402
 )
 from src.core.config import get_config  # noqa: E402
 from src.core.facade import RequirementAnalysisFacade  # noqa: E402
+from src.core.sessions import SESSION_COOKIE_NAME, SessionManager, SessionState  # noqa: E402
 from src.core.static_files import is_unsafe_relative_path, resolve_file_under  # noqa: E402
 
 app = FastAPI(
@@ -38,14 +39,31 @@ app.add_middleware(
 )
 
 
-class AppState:
-    """Lưu trữ phiên phân tích hiện tại trên máy chủ."""
-
-    def __init__(self):
-        self.facade = RequirementAnalysisFacade(force_llm_mode=True, strict_llm=True)
+session_manager = SessionManager()
 
 
-state = AppState()
+@app.middleware("http")
+async def attach_session(request: Request, call_next):
+    """Gắn phiên riêng cho mỗi client và phát cookie đã ký khi tạo phiên mới."""
+    session, new_token = session_manager.get_or_create(request.cookies.get(SESSION_COOKIE_NAME))
+    request.state.session = session
+    response = await call_next(request)
+    if new_token:
+        response.set_cookie(
+            key=SESSION_COOKIE_NAME,
+            value=new_token,
+            max_age=session_manager.ttl_seconds,
+            httponly=True,
+            samesite="lax",
+            secure=session_manager.secure_cookie,
+            path="/",
+        )
+    return response
+
+
+def get_session(request: Request) -> SessionState:
+    """FastAPI dependency: trả về phiên đã được middleware gắn vào request."""
+    return request.state.session
 
 
 class SmartRewriteRequest(BaseModel):
@@ -126,6 +144,7 @@ async def analyze_requirements(
     project_name: str = Form(""),
     raw_text: str = Form(""),
     file: Optional[UploadFile] = File(None),
+    session: SessionState = Depends(get_session),
 ):
     """Phân tích tài liệu yêu cầu thực tế qua đường ống AI/NLP 6 bước."""
     config = get_config()
@@ -184,173 +203,195 @@ async def analyze_requirements(
         model_name=model_name.strip() or None,
     )
 
-    state.facade = RequirementAnalysisFacade(
-        llm_client=llm_client,
-        confidence_threshold=confidence_threshold,
-        force_llm_mode=active_llm_mode,
-        strict_llm=use_cloud_llm,
-    )
-
-    try:
-        state.facade.analyze_document(
-            source=source,
-            filename=filename,
-            file_size_bytes=size_bytes,
-            project_name=project_name.strip() or None,
+    with session.lock:
+        session.facade = RequirementAnalysisFacade(
+            llm_client=llm_client,
+            confidence_threshold=confidence_threshold,
+            force_llm_mode=active_llm_mode,
+            strict_llm=use_cloud_llm,
         )
-        return _serialize_current_result(state.facade)
-    except ValueError as ve:
-        raise HTTPException(status_code=400, detail=str(ve)) from ve
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+        try:
+            session.facade.analyze_document(
+                source=source,
+                filename=filename,
+                file_size_bytes=size_bytes,
+                project_name=project_name.strip() or None,
+            )
+            return _serialize_current_result(session.facade)
+        except ValueError as ve:
+            raise HTTPException(status_code=400, detail=str(ve)) from ve
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @app.post("/api/requirements/{req_id}/apply-smart")
-def apply_smart_single(req_id: str, body: SmartRewriteRequest):
+def apply_smart_single(
+    req_id: str,
+    body: SmartRewriteRequest,
+    session: SessionState = Depends(get_session),
+):
     """Áp dụng câu viết lại chuẩn SMART cho một yêu cầu cụ thể."""
-    if not state.facade.current_project:
-        raise HTTPException(status_code=400, detail="Chưa có dữ liệu phân tích.")
-    state.facade.apply_smart_rewrite(req_id, new_text=body.new_text)
-    return _serialize_current_result(state.facade)
+    with session.lock:
+        if not session.facade.current_project:
+            raise HTTPException(status_code=400, detail="Chưa có dữ liệu phân tích.")
+        session.facade.apply_smart_rewrite(req_id, new_text=body.new_text)
+        return _serialize_current_result(session.facade)
 
 
 @app.post("/api/requirements/apply-smart-all")
-def apply_smart_all():
+def apply_smart_all(session: SessionState = Depends(get_session)):
     """Áp dụng câu viết lại chuẩn SMART cho toàn bộ các câu đang bị mơ hồ."""
-    if not state.facade.current_project:
-        raise HTTPException(status_code=400, detail="Chưa có dữ liệu phân tích.")
-    for req in state.facade.current_requirements:
-        if req.is_ambiguous and req.smart_rewrite:
-            req.raw_text = req.smart_rewrite
-            req.is_ambiguous = False
-            req.vague_terms = []
-            req.missing_actor = False
-            req.missing_metric = False
-    state.facade.db.save_requirements(state.facade.current_requirements)
-    state.facade.resync_artifacts()
-    return _serialize_current_result(state.facade)
+    with session.lock:
+        if not session.facade.current_project:
+            raise HTTPException(status_code=400, detail="Chưa có dữ liệu phân tích.")
+        for req in session.facade.current_requirements:
+            if req.is_ambiguous and req.smart_rewrite:
+                req.raw_text = req.smart_rewrite
+                req.is_ambiguous = False
+                req.vague_terms = []
+                req.missing_actor = False
+                req.missing_metric = False
+        session.facade.db.save_requirements(session.facade.current_requirements)
+        session.facade.resync_artifacts()
+        return _serialize_current_result(session.facade)
 
 
 @app.post("/api/requirements/{req_id}/update-type")
-def update_requirement_type(req_id: str, body: UpdateTypeRequest):
+def update_requirement_type(
+    req_id: str,
+    body: UpdateTypeRequest,
+    session: SessionState = Depends(get_session),
+):
     """Cập nhật nhãn phân loại FR/NFR và danh mục ISO 25010 cho một câu yêu cầu."""
-    if not state.facade.current_project:
-        raise HTTPException(status_code=400, detail="Chưa có dữ liệu phân tích.")
-    state.facade.update_requirement_type(req_id, body.req_type, body.nfr_category)
-    return _serialize_current_result(state.facade)
+    with session.lock:
+        if not session.facade.current_project:
+            raise HTTPException(status_code=400, detail="Chưa có dữ liệu phân tích.")
+        session.facade.update_requirement_type(req_id, body.req_type, body.nfr_category)
+        return _serialize_current_result(session.facade)
 
 
 @app.get("/api/export/srs-docx")
-def export_srs_docx():
+def export_srs_docx(session: SessionState = Depends(get_session)):
     """Tải tệp báo cáo đặc tả SRS định dạng Microsoft Word (.docx)."""
-    if not state.facade.current_project:
-        raise HTTPException(status_code=404, detail="Chưa có dữ liệu phân tích.")
-    docx_bytes = state.facade.export_srs_docx()
-    return Response(
-        content=docx_bytes,
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={"Content-Disposition": 'attachment; filename="SRS_Specification.docx"'},
-    )
+    with session.lock:
+        if not session.facade.current_project:
+            raise HTTPException(status_code=404, detail="Chưa có dữ liệu phân tích.")
+        docx_bytes = session.facade.export_srs_docx()
+        return Response(
+            content=docx_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": 'attachment; filename="SRS_Specification.docx"'},
+        )
 
 
 @app.get("/api/export/srs-md")
-def export_srs_md():
+def export_srs_md(session: SessionState = Depends(get_session)):
     """Tải tệp báo cáo đặc tả SRS định dạng Markdown (.md)."""
-    if not state.facade.current_project:
-        raise HTTPException(status_code=404, detail="Chưa có dữ liệu phân tích.")
-    md_text = state.facade.export_srs_markdown()
-    return Response(
-        content=md_text.encode("utf-8"),
-        media_type="text/markdown; charset=utf-8",
-        headers={"Content-Disposition": 'attachment; filename="SRS_Specification.md"'},
-    )
+    with session.lock:
+        if not session.facade.current_project:
+            raise HTTPException(status_code=404, detail="Chưa có dữ liệu phân tích.")
+        md_text = session.facade.export_srs_markdown()
+        return Response(
+            content=md_text.encode("utf-8"),
+            media_type="text/markdown; charset=utf-8",
+            headers={"Content-Disposition": 'attachment; filename="SRS_Specification.md"'},
+        )
 
 
 @app.get("/api/export/diagram-png")
-def export_diagram_png():
+def export_diagram_png(session: SessionState = Depends(get_session)):
     """Trả về ảnh PNG sơ đồ Use Case UML 2.5."""
-    if not state.facade.current_plantuml_bytes:
-        raise HTTPException(status_code=404, detail="Chưa có ảnh sơ đồ Use Case.")
-    return Response(
-        content=state.facade.current_plantuml_bytes,
-        media_type="image/png",
-        headers={"Content-Disposition": 'inline; filename="usecase_diagram.png"'},
-    )
+    with session.lock:
+        if not session.facade.current_plantuml_bytes:
+            raise HTTPException(status_code=404, detail="Chưa có ảnh sơ đồ Use Case.")
+        return Response(
+            content=session.facade.current_plantuml_bytes,
+            media_type="image/png",
+            headers={"Content-Disposition": 'inline; filename="usecase_diagram.png"'},
+        )
 
 
 @app.get("/api/export/diagram-puml")
-def export_diagram_puml():
+def export_diagram_puml(session: SessionState = Depends(get_session)):
     """Tải mã nguồn PlantUML (.puml)."""
-    if not state.facade.current_plantuml_code:
-        raise HTTPException(status_code=404, detail="Chưa có mã PlantUML.")
-    return Response(
-        content=state.facade.current_plantuml_code.encode("utf-8"),
-        media_type="text/plain; charset=utf-8",
-        headers={"Content-Disposition": 'attachment; filename="usecase_diagram.puml"'},
-    )
+    with session.lock:
+        if not session.facade.current_plantuml_code:
+            raise HTTPException(status_code=404, detail="Chưa có mã PlantUML.")
+        return Response(
+            content=session.facade.current_plantuml_code.encode("utf-8"),
+            media_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": 'attachment; filename="usecase_diagram.puml"'},
+        )
 
 
 @app.get("/api/export/jira-csv")
-def export_jira_csv():
+def export_jira_csv(session: SessionState = Depends(get_session)):
     """Tải tệp CSV chuẩn Jira Issue Import."""
-    if not state.facade.current_project:
-        raise HTTPException(status_code=404, detail="Chưa có dữ liệu phân tích.")
-    csv_data = state.facade.export_jira_csv()
-    return Response(
-        content=csv_data.encode("utf-8"),
-        media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": 'attachment; filename="jira_stories_import.csv"'},
-    )
+    with session.lock:
+        if not session.facade.current_project:
+            raise HTTPException(status_code=404, detail="Chưa có dữ liệu phân tích.")
+        csv_data = session.facade.export_jira_csv()
+        return Response(
+            content=csv_data.encode("utf-8"),
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": 'attachment; filename="jira_stories_import.csv"'},
+        )
 
 
 @app.get("/api/export/github-json")
-def export_github_json():
+def export_github_json(session: SessionState = Depends(get_session)):
     """Tải tệp JSON chuẩn GitHub Issues."""
-    if not state.facade.current_project:
-        raise HTTPException(status_code=404, detail="Chưa có dữ liệu phân tích.")
-    json_data = state.facade.export_github_json()
-    return Response(
-        content=json_data.encode("utf-8"),
-        media_type="application/json; charset=utf-8",
-        headers={"Content-Disposition": 'attachment; filename="github_issues_export.json"'},
-    )
+    with session.lock:
+        if not session.facade.current_project:
+            raise HTTPException(status_code=404, detail="Chưa có dữ liệu phân tích.")
+        json_data = session.facade.export_github_json()
+        return Response(
+            content=json_data.encode("utf-8"),
+            media_type="application/json; charset=utf-8",
+            headers={"Content-Disposition": 'attachment; filename="github_issues_export.json"'},
+        )
 
 
 @app.get("/api/export/trello-json")
-def export_trello_json():
+def export_trello_json(session: SessionState = Depends(get_session)):
     """Tải tệp JSON chuẩn Trello Board."""
-    if not state.facade.current_project:
-        raise HTTPException(status_code=404, detail="Chưa có dữ liệu phân tích.")
-    json_data = state.facade.export_trello_json()
-    return Response(
-        content=json_data.encode("utf-8"),
-        media_type="application/json; charset=utf-8",
-        headers={"Content-Disposition": 'attachment; filename="trello_board_export.json"'},
-    )
+    with session.lock:
+        if not session.facade.current_project:
+            raise HTTPException(status_code=404, detail="Chưa có dữ liệu phân tích.")
+        json_data = session.facade.export_trello_json()
+        return Response(
+            content=json_data.encode("utf-8"),
+            media_type="application/json; charset=utf-8",
+            headers={"Content-Disposition": 'attachment; filename="trello_board_export.json"'},
+        )
 
 
 @app.post("/api/sync/jira")
-def sync_jira(req: JiraSyncRequest):
+def sync_jira(req: JiraSyncRequest, session: SessionState = Depends(get_session)):
     """Đồng bộ User Stories trực tiếp lên Jira Cloud REST API v3."""
-    if not state.facade.current_project:
-        raise HTTPException(status_code=400, detail="Chưa có dữ liệu phân tích.")
-    return state.facade.sync_to_jira(req.domain, req.email, req.token, req.project_key)
+    with session.lock:
+        if not session.facade.current_project:
+            raise HTTPException(status_code=400, detail="Chưa có dữ liệu phân tích.")
+        return session.facade.sync_to_jira(req.domain, req.email, req.token, req.project_key)
 
 
 @app.post("/api/sync/github")
-def sync_github(req: GitHubSyncRequest):
+def sync_github(req: GitHubSyncRequest, session: SessionState = Depends(get_session)):
     """Đồng bộ User Stories trực tiếp lên GitHub Issues REST API."""
-    if not state.facade.current_project:
-        raise HTTPException(status_code=400, detail="Chưa có dữ liệu phân tích.")
-    return state.facade.sync_to_github(req.repo, req.token)
+    with session.lock:
+        if not session.facade.current_project:
+            raise HTTPException(status_code=400, detail="Chưa có dữ liệu phân tích.")
+        return session.facade.sync_to_github(req.repo, req.token)
 
 
 @app.post("/api/sync/trello")
-def sync_trello(req: TrelloSyncRequest):
+def sync_trello(req: TrelloSyncRequest, session: SessionState = Depends(get_session)):
     """Đồng bộ User Stories trực tiếp lên Trello Board REST API."""
-    if not state.facade.current_project:
-        raise HTTPException(status_code=400, detail="Chưa có dữ liệu phân tích.")
-    return state.facade.sync_to_trello(req.api_key, req.token, req.list_id)
+    with session.lock:
+        if not session.facade.current_project:
+            raise HTTPException(status_code=400, detail="Chưa có dữ liệu phân tích.")
+        return session.facade.sync_to_trello(req.api_key, req.token, req.list_id)
 
 
 # Phục vụ giao diện React SPA đã build tại thư mục frontend/dist
