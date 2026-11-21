@@ -170,8 +170,10 @@ export default function App() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [activeStepIdx, setActiveStepIdx] = useState(0);
   const [elapsedMs, setElapsedMs] = useState(0);
+  const [jobMessage, setJobMessage] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [result, setResult] = useState(null);
+  const currentJobIdRef = useRef(null);
 
   // Master-Detail selection state for Requirements (Screen 2)
   const [reqFilter, setReqFilter] = useState('all');
@@ -291,17 +293,14 @@ export default function App() {
     animateContainerEntrance(mainViewRef.current);
   }, [activeView]);
 
-  // Live 60fps JS timer & step progression while analyzing
+  // Live timer while the background job runs; steps come from the server
   useEffect(() => {
     if (!isAnalyzing) return;
     const start = performance.now();
     let rafId = null;
 
     const tick = (now) => {
-      const diff = now - start;
-      setElapsedMs(diff);
-      const step = Math.min(Math.floor(diff / 750), 5);
-      setActiveStepIdx(step);
+      setElapsedMs(now - start);
       rafId = requestAnimationFrame(tick);
     };
 
@@ -406,6 +405,8 @@ export default function App() {
 
     setIsAnalyzing(true);
     setActiveStepIdx(0);
+    setJobMessage('Đã gửi yêu cầu phân tích tới máy chủ...');
+    currentJobIdRef.current = null;
 
     try {
       const formData = new FormData();
@@ -424,23 +425,62 @@ export default function App() {
         body: formData,
       });
 
-      const data = await resp.json();
+      const submitted = await resp.json().catch(() => ({}));
       if (!resp.ok) {
-        throw new Error(data.detail || 'Lỗi khi phân tích tài liệu qua AI API.');
+        throw new Error(submitted.detail || 'Lỗi khi gửi tài liệu tới máy chủ phân tích.');
+      }
+      if (!submitted.job_id) {
+        throw new Error('Máy chủ không trả về mã job phân tích.');
+      }
+      currentJobIdRef.current = submitted.job_id;
+
+      let job = null;
+      while (true) {
+        const jobResp = await fetch(`/api/jobs/${submitted.job_id}`);
+        const jobData = await jobResp.json().catch(() => ({}));
+        if (!jobResp.ok) {
+          throw new Error(jobData.detail || 'Không đọc được trạng thái job phân tích.');
+        }
+        job = jobData;
+        if (job.message) setJobMessage(job.message);
+        if (typeof job.step === 'number' && job.step > 0) {
+          setActiveStepIdx(Math.min(job.step - 1, PIPELINE_STEPS.length - 1));
+        }
+        if (job.status === 'succeeded') break;
+        if (job.status === 'failed') {
+          throw new Error(job.error || 'Phân tích thất bại trên máy chủ.');
+        }
+        if (job.status === 'cancelled') {
+          throw new Error('Đã hủy phân tích.');
+        }
+        await new Promise((resolve) => setTimeout(resolve, 500));
       }
 
+      const data = job.result;
+      setActiveStepIdx(PIPELINE_STEPS.length);
       setResult(data);
-      if (data.requirements?.length > 0) {
+      if (data?.requirements?.length > 0) {
         setSelectedReqId(data.requirements[0].req_id);
       }
-      if (data.user_stories?.length > 0) {
+      if (data?.user_stories?.length > 0) {
         setSelectedStoryId(data.user_stories[0].story_id);
       }
       setActiveView('requirements');
     } catch (err) {
       setErrorMsg(err.message);
     } finally {
+      currentJobIdRef.current = null;
       setIsAnalyzing(false);
+    }
+  };
+
+  const handleCancelAnalysis = async () => {
+    const jobId = currentJobIdRef.current;
+    if (!jobId) return;
+    try {
+      await fetch(`/api/jobs/${jobId}/cancel`, { method: 'POST' });
+    } catch {
+      // Polling will report the final job state
     }
   };
 
@@ -1682,6 +1722,32 @@ export default function App() {
               >
                 {(elapsedMs / 1000).toFixed(2)}s
               </div>
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: '12px',
+                marginTop: '12px',
+                padding: '10px 12px',
+                background: '#F8FAFC',
+                border: '1px solid #E2E8F0',
+                borderRadius: '8px',
+              }}
+            >
+              <div style={{ fontSize: '0.83rem', color: '#475569' }}>
+                {jobMessage || 'Đang chờ máy chủ khởi động job phân tích...'}
+              </div>
+              <button
+                type="button"
+                className="btn"
+                style={{ whiteSpace: 'nowrap', padding: '6px 12px', fontSize: '0.8rem' }}
+                onClick={handleCancelAnalysis}
+              >
+                Hủy phân tích
+              </button>
             </div>
 
             <div className="pipeline-step-list">
