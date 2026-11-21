@@ -2,6 +2,7 @@
 
 from src.core.config import (
     DEFAULT_CONFIDENCE_THRESHOLD,
+    DEFAULT_CORS_ORIGINS,
     DEFAULT_DATABASE_PATH,
     DEFAULT_MAX_FILE_SIZE_BYTES,
     DEFAULT_MAX_RAW_TEXT_CHARS,
@@ -82,6 +83,27 @@ def test_config_reads_resource_limits():
     assert invalid.max_file_size_bytes == DEFAULT_MAX_FILE_SIZE_BYTES
     assert invalid.max_raw_text_chars == DEFAULT_MAX_RAW_TEXT_CHARS
     assert invalid.max_requirements == DEFAULT_MAX_REQUIREMENTS
+
+
+def test_config_reads_auth_cors_and_rate_limits():
+    config = AppConfig.from_env({
+        "APP_PASSWORD": " mat-khau ",
+        "CORS_ORIGINS": "http://localhost:5173, https://app.example.com/,*",
+        "ANALYZE_RATE_LIMIT_PER_MINUTE": "3",
+        "AUTH_RATE_LIMIT_PER_MINUTE": "2",
+        "COOKIE_SECURE": "true",
+    })
+
+    assert config.app_password == "mat-khau"
+    assert config.cors_origins == ("http://localhost:5173", "https://app.example.com")
+    assert config.analyze_rate_limit_per_minute == 3
+    assert config.auth_rate_limit_per_minute == 2
+    assert config.session_cookie_secure is True
+
+
+def test_config_cors_wildcard_falls_back_to_defaults():
+    assert AppConfig.from_env({"CORS_ORIGINS": "*"}).cors_origins == DEFAULT_CORS_ORIGINS
+    assert AppConfig.from_env({}).app_password is None
 
 
 def test_database_manager_uses_configured_path(tmp_path, monkeypatch):

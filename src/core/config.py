@@ -47,6 +47,9 @@ DEFAULT_SESSION_TTL_SECONDS = 24 * 60 * 60
 DEFAULT_MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024
 DEFAULT_MAX_RAW_TEXT_CHARS = 200_000
 DEFAULT_MAX_REQUIREMENTS = 500
+DEFAULT_CORS_ORIGINS = ("http://localhost:5173", "http://127.0.0.1:5173")
+DEFAULT_ANALYZE_RATE_LIMIT_PER_MINUTE = 5
+DEFAULT_AUTH_RATE_LIMIT_PER_MINUTE = 5
 
 
 def _parse_confidence_threshold(raw_value: Optional[str], default: float) -> float:
@@ -97,6 +100,22 @@ def _parse_provider(raw_value: Optional[str]) -> str:
     return DEFAULT_PROVIDER
 
 
+def _parse_cors_origins(raw_value: Optional[str], default: tuple) -> tuple:
+    """Đọc danh sách origin CORS; loại bỏ '*' vì không an toàn với credentials."""
+    if raw_value is None or not str(raw_value).strip():
+        return default
+    origins = []
+    for item in str(raw_value).split(","):
+        origin = item.strip().rstrip("/")
+        if not origin:
+            continue
+        if origin == "*":
+            logger.warning("CORS_ORIGINS chứa '*', bỏ qua vì allow_credentials=True.")
+            continue
+        origins.append(origin)
+    return tuple(origins) or default
+
+
 @dataclass(frozen=True)
 class AppConfig:
     """Cấu hình bất biến của ứng dụng, tạo từ biến môi trường."""
@@ -113,6 +132,10 @@ class AppConfig:
     max_file_size_bytes: int = DEFAULT_MAX_FILE_SIZE_BYTES
     max_raw_text_chars: int = DEFAULT_MAX_RAW_TEXT_CHARS
     max_requirements: int = DEFAULT_MAX_REQUIREMENTS
+    app_password: Optional[str] = None
+    cors_origins: tuple = DEFAULT_CORS_ORIGINS
+    analyze_rate_limit_per_minute: int = DEFAULT_ANALYZE_RATE_LIMIT_PER_MINUTE
+    auth_rate_limit_per_minute: int = DEFAULT_AUTH_RATE_LIMIT_PER_MINUTE
 
     def model_for(self, provider: str) -> str:
         """Trả về model đã cấu hình cho provider, fallback về default của provider đó."""
@@ -133,6 +156,9 @@ class AppConfig:
 
         database_path = (env.get("DATABASE_PATH") or "").strip() or DEFAULT_DATABASE_PATH
         secret_key = (env.get("SECRET_KEY") or "").strip() or None
+        secure_raw = env.get("SESSION_COOKIE_SECURE")
+        if secure_raw is None:
+            secure_raw = env.get("COOKIE_SECURE")
 
         return cls(
             default_provider=_parse_provider(env.get("DEFAULT_PROVIDER")),
@@ -145,7 +171,7 @@ class AppConfig:
             session_ttl_seconds=_parse_positive_int(
                 env.get("SESSION_TTL_SECONDS"), DEFAULT_SESSION_TTL_SECONDS
             ),
-            session_cookie_secure=_parse_bool(env.get("SESSION_COOKIE_SECURE")),
+            session_cookie_secure=_parse_bool(secure_raw),
             max_file_size_bytes=_parse_positive_int(
                 env.get("MAX_FILE_SIZE_BYTES"), DEFAULT_MAX_FILE_SIZE_BYTES
             ),
@@ -154,6 +180,14 @@ class AppConfig:
             ),
             max_requirements=_parse_positive_int(
                 env.get("MAX_REQUIREMENTS"), DEFAULT_MAX_REQUIREMENTS
+            ),
+            app_password=(env.get("APP_PASSWORD") or "").strip() or None,
+            cors_origins=_parse_cors_origins(env.get("CORS_ORIGINS"), DEFAULT_CORS_ORIGINS),
+            analyze_rate_limit_per_minute=_parse_positive_int(
+                env.get("ANALYZE_RATE_LIMIT_PER_MINUTE"), DEFAULT_ANALYZE_RATE_LIMIT_PER_MINUTE
+            ),
+            auth_rate_limit_per_minute=_parse_positive_int(
+                env.get("AUTH_RATE_LIMIT_PER_MINUTE"), DEFAULT_AUTH_RATE_LIMIT_PER_MINUTE
             ),
         )
 
