@@ -229,7 +229,10 @@ class UserStoryGenerator:
                 role = "Quản trị viên hệ thống" if lang == "vi" else "System Administrator"
             elif low_actor in ("chuyên viên nhân sự", "bộ phận c&b", "nhân sự thuộc bộ phận c&b", "hr / c&b", "hr"):
                 role = "Chuyên viên Nhân sự (HR)"
-            elif low_actor in ("quản lý trực tiếp", "người quản lý", "cấp quản lý", "line manager", "quản lý duyệt", "manager", "managers"):
+            elif low_actor in (
+                "quản lý trực tiếp", "người quản lý", "cấp quản lý",
+                "line manager", "quản lý duyệt", "manager", "managers",
+            ):
                 role = "Quản lý trực tiếp" if lang == "vi" else "Line Manager"
             elif low_actor in ("nhân viên", "employee"):
                 role = "Nhân viên" if lang == "vi" else "Employee"
