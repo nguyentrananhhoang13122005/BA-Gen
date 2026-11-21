@@ -20,6 +20,7 @@ from src.classifiers.llm_client import (  # noqa: E402
     is_ollama_running,
     is_real_api_key,
 )
+from src.core.config import get_config  # noqa: E402
 from src.core.facade import RequirementAnalysisFacade  # noqa: E402
 from src.core.static_files import is_unsafe_relative_path, resolve_file_under  # noqa: E402
 
@@ -99,11 +100,16 @@ def _serialize_current_result(facade: RequirementAnalysisFacade) -> dict:
 
 @app.get("/api/config-defaults")
 def get_config_defaults():
-    """Trả về thông tin khóa API mặc định từ môi trường và trạng thái Ollama."""
+    """Trả về cấu hình mặc định từ môi trường và trạng thái Ollama (không lộ khóa)."""
+    config = get_config()
     groq_env = os.getenv("GROQ_API_KEY", "")
     gemini_env = os.getenv("GEMINI_API_KEY", "")
     openrouter_env = os.getenv("OPENROUTER_API_KEY", "")
     return {
+        "default_provider": config.default_provider,
+        "default_model": config.model_for(config.default_provider),
+        "confidence_threshold": config.confidence_threshold,
+        "models": dict(config.models),
         "has_env_groq": is_real_api_key(groq_env),
         "has_env_gemini": is_real_api_key(gemini_env),
         "has_env_openrouter": is_real_api_key(openrouter_env),
@@ -113,16 +119,24 @@ def get_config_defaults():
 
 @app.post("/api/analyze")
 async def analyze_requirements(
-    provider: str = Form("local_nlp"),
+    provider: Optional[str] = Form(None),
     api_key: str = Form(""),
     model_name: str = Form(""),
-    confidence_threshold: float = Form(0.75),
+    confidence_threshold: Optional[float] = Form(None),
     project_name: str = Form(""),
     raw_text: str = Form(""),
     file: Optional[UploadFile] = File(None),
 ):
     """Phân tích tài liệu yêu cầu thực tế qua đường ống AI/NLP 6 bước."""
-    clean_provider = provider.lower().strip()
+    config = get_config()
+    clean_provider = (provider or config.default_provider).lower().strip()
+    if confidence_threshold is None:
+        confidence_threshold = config.confidence_threshold
+    elif not 0.0 <= confidence_threshold <= 1.0:
+        raise HTTPException(
+            status_code=400,
+            detail="Ngưỡng tin cậy (confidence_threshold) phải nằm trong khoảng 0..1.",
+        )
     effective_key = api_key.strip()
 
     if not effective_key and clean_provider in ("groq", "gemini", "openrouter"):
