@@ -11,6 +11,7 @@ import logging
 import secrets
 import threading
 import time
+from collections import deque
 from typing import Dict, Optional, Tuple
 
 from src.classifiers.llm_client import MultiLLMClient
@@ -23,7 +24,9 @@ SESSION_COOKIE_NAME = "ba_gen_session"
 
 
 class SessionState:
-    """Trạng thái riêng của một phiên: facade + khóa chống race."""
+    """Trạng thái riêng của một phiên: facade, xác thực và khóa chống race."""
+
+    ANALYZE_WINDOW_SECONDS = 60
 
     def __init__(
         self,
@@ -35,7 +38,25 @@ class SessionState:
             llm_client=MultiLLMClient(provider="local_nlp"),
             owner_id=owner_id,
         )
+        self.authenticated = False
+        self._analyze_timestamps: deque = deque()
         self.lock = threading.RLock()
+
+    def check_analyze_rate(self, limit_per_minute: int) -> bool:
+        """Ghi nhận một lượt analyze nếu chưa vượt hạn mức trượt 60 giây.
+
+        Gọi trong khi đang giữ ``self.lock`` để tránh đếm trùng giữa các request.
+        """
+        now = time.time()
+        while (
+            self._analyze_timestamps
+            and now - self._analyze_timestamps[0] >= self.ANALYZE_WINDOW_SECONDS
+        ):
+            self._analyze_timestamps.popleft()
+        if len(self._analyze_timestamps) >= limit_per_minute:
+            return False
+        self._analyze_timestamps.append(now)
+        return True
 
 
 class SessionManager:
@@ -114,6 +135,14 @@ class SessionManager:
             return state, None
         new_token, new_state = self.create()
         return new_state, new_token
+
+    def invalidate(self, token: Optional[str]) -> None:
+        """Hủy phiên phía máy chủ khi người dùng đăng xuất."""
+        session_id = self._parse_token(token)
+        if not session_id:
+            return
+        with self._lock:
+            self._entries.pop(session_id, None)
 
     def _purge_expired_locked(self) -> None:
         now = time.time()

@@ -4,7 +4,7 @@ import src.core.sessions as sessions_module
 from fastapi.testclient import TestClient
 
 from app import app
-from src.core.sessions import SESSION_COOKIE_NAME, SessionManager
+from src.core.sessions import SESSION_COOKIE_NAME, SessionManager, SessionState
 
 
 def _analyze(client: TestClient, text: str) -> dict:
@@ -23,7 +23,7 @@ def test_session_cookie_is_http_only_and_signed():
     set_cookie = response.headers.get("set-cookie", "")
     assert SESSION_COOKIE_NAME in set_cookie
     assert "HttpOnly" in set_cookie
-    assert "SameSite=lax" in set_cookie
+    assert "SameSite=strict" in set_cookie
 
 
 def test_two_sessions_do_not_share_analysis_data():
@@ -84,3 +84,35 @@ def test_session_ids_are_unique_and_state_isolated():
     assert state_one is not state_two
     assert manager.resolve(token_one) is state_one
     assert manager.resolve(token_two) is state_two
+
+
+def test_session_state_tracks_auth_and_analyze_quota():
+    state = SessionState(owner_id="owner", facade=object())
+
+    assert state.authenticated is False
+    state.authenticated = True
+    assert state.authenticated is True
+
+    assert state.check_analyze_rate(2) is True
+    assert state.check_analyze_rate(2) is True
+    assert state.check_analyze_rate(2) is False
+
+
+def test_analyze_quota_window_slides(monkeypatch):
+    state = SessionState(owner_id="owner", facade=object())
+    monkeypatch.setattr(sessions_module.time, "time", lambda: 100.0)
+    assert state.check_analyze_rate(1) is True
+    assert state.check_analyze_rate(1) is False
+
+    monkeypatch.setattr(sessions_module.time, "time", lambda: 161.0)
+    assert state.check_analyze_rate(1) is True
+
+
+def test_manager_invalidate_removes_session():
+    manager = SessionManager(secret_key="test-secret", ttl_seconds=60, secure_cookie=False)
+    token, _state = manager.create()
+
+    manager.invalidate(token)
+
+    assert manager.resolve(token) is None
+    assert manager.active_session_count() == 0
