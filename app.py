@@ -296,6 +296,15 @@ def get_config_defaults(session: SessionState = Depends(require_session)):
     }
 
 
+@app.get("/api/session/current")
+def get_current_session_analysis(session: SessionState = Depends(require_session)):
+    """Khôi phục kết quả phân tích hiện tại của phiên làm việc khi người dùng nhấn F5."""
+    with session.lock:
+        if not session.facade.current_project:
+            return {"has_result": False, "result": None}
+        return {"has_result": True, "result": _serialize_current_result(session.facade)}
+
+
 def _run_analysis_job(
     job: Job,
     session: SessionState,

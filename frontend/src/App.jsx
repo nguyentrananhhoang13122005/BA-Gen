@@ -1,30 +1,29 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   animateContainerEntrance,
-  animateInspectorPanel,
   animateStaggerItems,
   animateSuccessFlash,
   useAnimatedNumber,
 } from './animations.js';
 
 const ISO_VI_MAP = {
-  Performance: 'Hiệu năng & Tốc độ',
+  Performance: 'Tốc độ & Hiệu năng',
   Security: 'Bảo mật & An toàn',
-  Usability: 'Dễ sử dụng & Trải nghiệm',
-  Reliability: 'Độ ổn định & Tin cậy',
+  Usability: 'Dễ sử dụng',
+  Reliability: 'Độ ổn định',
   Maintainability: 'Dễ bảo trì & Nâng cấp',
-  Portability: 'Tương thích đa nền tảng',
+  Portability: 'Chạy trên nhiều thiết bị',
 };
 
 const ISO_KEYS = Object.keys(ISO_VI_MAP);
 
 const PIPELINE_STEPS = [
-  '1. Đọc tài liệu & Tách câu yêu cầu',
-  '2. Phân loại Tính năng (FR) & Chất lượng (NFR)',
-  '3. Phát hiện từ mơ hồ & Viết lại câu rõ ràng',
-  '4. Sinh kịch bản người dùng & Tình huống kiểm thử',
-  '5. Vẽ sơ đồ chức năng tổng quan (Use Case)',
-  '6. Đóng gói báo cáo đặc tả Word (.docx)',
+  '1. Đọc tài liệu & Tách thành từng câu yêu cầu',
+  '2. Phân biệt Tính năng phần mềm & Yêu cầu chất lượng',
+  '3. Tìm các từ viết chung chung & Gợi ý câu viết rõ ràng',
+  '4. Viết kịch bản người dùng & Tình huống kiểm tra',
+  '5. Vẽ sơ đồ chức năng tổng quan',
+  '6. Tạo file Báo cáo Word (.docx) hoàn chỉnh',
 ];
 
 function Icon({ name, size = 18 }) {
@@ -34,7 +33,7 @@ function Icon({ name, size = 18 }) {
     viewBox: '0 0 24 24',
     fill: 'none',
     stroke: 'currentColor',
-    strokeWidth: '1.9',
+    strokeWidth: '2',
     strokeLinecap: 'round',
     strokeLinejoin: 'round',
   };
@@ -48,24 +47,6 @@ function Icon({ name, size = 18 }) {
           <line x1="12" y1="3" x2="12" y2="15" />
         </svg>
       );
-    case 'list':
-      return (
-        <svg {...props}>
-          <rect x="3" y="4" width="18" height="16" rx="2" />
-          <line x1="7" y1="9" x2="17" y2="9" />
-          <line x1="7" y1="13" x2="17" y2="13" />
-          <line x1="7" y1="17" x2="13" y2="17" />
-        </svg>
-      );
-    case 'users':
-      return (
-        <svg {...props}>
-          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-          <circle cx="9" cy="7" r="4" />
-          <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-          <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-        </svg>
-      );
     case 'file':
       return (
         <svg {...props}>
@@ -73,16 +54,6 @@ function Icon({ name, size = 18 }) {
           <polyline points="14 2 14 8 20 8" />
           <line x1="16" y1="13" x2="8" y2="13" />
           <line x1="16" y1="17" x2="8" y2="17" />
-        </svg>
-      );
-    case 'share':
-      return (
-        <svg {...props}>
-          <circle cx="18" cy="5" r="3" />
-          <circle cx="6" cy="12" r="3" />
-          <circle cx="18" cy="19" r="3" />
-          <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
-          <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
         </svg>
       );
     case 'sparkles':
@@ -97,12 +68,26 @@ function Icon({ name, size = 18 }) {
           <polyline points="20 6 9 17 4 12" />
         </svg>
       );
-    case 'key':
+    case 'settings':
       return (
         <svg {...props}>
-          <circle cx="7.5" cy="15.5" r="5.5" />
-          <path d="m21 2-9.6 9.6" />
-          <path d="m15.5 7.5 3 3L22 7l-3-3" />
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+      );
+    case 'download':
+      return (
+        <svg {...props}>
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <polyline points="7 10 12 15 17 10" />
+          <line x1="12" y1="15" x2="12" y2="3" />
+        </svg>
+      );
+    case 'arrow-right':
+      return (
+        <svg {...props}>
+          <line x1="5" y1="12" x2="19" y2="12" />
+          <polyline points="12 5 19 12 12 19" />
         </svg>
       );
     default:
@@ -116,9 +101,6 @@ function Icon({ name, size = 18 }) {
   }
 }
 
-/**
- * Tô nổi bật các từ cảm tính/mơ hồ trong câu yêu cầu
- */
 function HighlightedText({ text, vagueTerms = [] }) {
   if (!vagueTerms || vagueTerms.length === 0) {
     return <span>{text}</span>;
@@ -133,7 +115,7 @@ function HighlightedText({ text, vagueTerms = [] }) {
       {parts.map((part, idx) => {
         const isMatch = sorted.some((t) => t.toLowerCase() === part.toLowerCase());
         return isMatch ? (
-          <span key={idx} className="vague-highlight" title="Từ viết chung chung, cần làm rõ">
+          <span key={idx} className="vague-highlight" title="Từ viết còn chung chung, nên làm rõ">
             {part}
           </span>
         ) : (
@@ -145,28 +127,32 @@ function HighlightedText({ text, vagueTerms = [] }) {
 }
 
 export default function App() {
-  // Navigation view: 'setup' | 'requirements' | 'stories' | 'srs' | 'sync'
-  const [activeView, setActiveView] = useState('setup');
+  // 3-Step Guided Wizard: 1 (Nhập tài liệu) -> 2 (Kiểm tra & Làm rõ) -> 3 (Nhận Báo cáo Word & Sơ đồ)
+  const [step, setStep] = useState(1);
 
-  // AI Configuration state
+  // Sub-tab inside Step 3: 'report' | 'stories' | 'table' | 'sync'
+  const [step3Tab, setStep3Tab] = useState('report');
+
+  // Optional AI Settings Modal state (Hidden from main view so low-tech users aren't overwhelmed)
+  const [showAiModal, setShowAiModal] = useState(false);
   const [provider, setProvider] = useState('local_nlp');
   const [apiKey, setApiKey] = useState('');
   const [modelName, setModelName] = useState('TF-IDF + LinearSVC (Bilingual NLP)');
   const [confidenceThreshold, setConfidenceThreshold] = useState(0.75);
   const [envDefaults, setEnvDefaults] = useState({});
 
-  // Authentication gate (only active when the server sets APP_PASSWORD)
+  // Auth gate (only if server configures APP_PASSWORD)
   const [authStatus, setAuthStatus] = useState({ loading: true, required: false, authenticated: false });
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
-  // Document Input state (Real user data only)
+  // Step 1 Input state
   const [projectName, setProjectName] = useState('');
   const [rawText, setRawText] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
 
-  // Analysis & Pipeline Animation state
+  // Analysis Job state
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [activeStepIdx, setActiveStepIdx] = useState(0);
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -175,34 +161,28 @@ export default function App() {
   const [result, setResult] = useState(null);
   const currentJobIdRef = useRef(null);
 
-  // Master-Detail selection state for Requirements (Screen 2)
+  // Step 2 Review state
   const [reqFilter, setReqFilter] = useState('all');
   const [reqSearch, setReqSearch] = useState('');
-  const [selectedReqId, setSelectedReqId] = useState(null);
-  const [customSmartText, setCustomSmartText] = useState('');
-  const [editType, setEditType] = useState('FR');
-  const [editCategory, setEditCategory] = useState('Performance');
+  const [editingReqId, setEditingReqId] = useState(null);
+  const [customTextMap, setCustomTextMap] = useState({});
+  const [editTypeMap, setEditTypeMap] = useState({});
+  const [editCatMap, setEditCatMap] = useState({});
   const [isUpdatingReq, setIsUpdatingReq] = useState(false);
 
-  // Master-Detail selection state for User Stories (Screen 3)
-  const [selectedStoryId, setSelectedStoryId] = useState(null);
-
-  // Sync Tab selection (Screen 5): 'rtm' | 'jira' | 'github' | 'trello'
-  const [syncTab, setSyncTab] = useState('rtm');
+  // Step 3 Sync state
+  const [showPlantUmlCode, setShowPlantUmlCode] = useState(false);
+  const [syncPlatform, setSyncPlatform] = useState('jira');
   const [jiraForm, setJiraForm] = useState({ domain: '', email: '', token: '', project_key: 'PROJ' });
   const [ghForm, setGhForm] = useState({ repo: '', token: '' });
   const [trelloForm, setTrelloForm] = useState({ api_key: '', token: '', list_id: '' });
   const [syncStatus, setSyncStatus] = useState(null);
 
-  // DOM Refs for JS Web Animations API
-  const mainViewRef = useRef(null);
-  const reqListRef = useRef(null);
-  const reqInspectorRef = useRef(null);
-  const storyListRef = useRef(null);
-  const storyInspectorRef = useRef(null);
+  const mainContainerRef = useRef(null);
+  const listContainerRef = useRef(null);
   const fileInputRef = useRef(null);
 
-  const loadConfigDefaults = () => {
+  const loadConfigAndSession = () => {
     fetch('/api/config-defaults')
       .then((r) => r.json())
       .then((d) => {
@@ -210,17 +190,28 @@ export default function App() {
         if (typeof d.confidence_threshold === 'number') {
           setConfidenceThreshold(d.confidence_threshold);
         }
-        const defaultProvider = d.default_provider;
+        const dp = d.default_provider;
         const isReady =
-          defaultProvider === 'local_nlp' ||
-          defaultProvider === 'offline' ||
-          (defaultProvider === 'ollama' && d.ollama_running) ||
-          (defaultProvider === 'groq' && d.has_env_groq) ||
-          (defaultProvider === 'gemini' && d.has_env_gemini) ||
-          (defaultProvider === 'openrouter' && d.has_env_openrouter);
-        if (isReady && defaultProvider && defaultProvider !== 'offline') {
-          setProvider(defaultProvider);
-          setModelName(d.models?.[defaultProvider] || '');
+          dp === 'local_nlp' ||
+          dp === 'offline' ||
+          (dp === 'ollama' && d.ollama_running) ||
+          (dp === 'groq' && d.has_env_groq) ||
+          (dp === 'gemini' && d.has_env_gemini) ||
+          (dp === 'openrouter' && d.has_env_openrouter);
+        if (isReady && dp && dp !== 'offline') {
+          setProvider(dp);
+          setModelName(d.models?.[dp] || '');
+        }
+      })
+      .catch(() => {});
+
+    // Auto-restore current session if user hits F5
+    fetch('/api/session/current')
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.has_result && d.result) {
+          setResult(d.result);
+          setStep(2);
         }
       })
       .catch(() => {});
@@ -232,14 +223,34 @@ export default function App() {
       .then((d) => {
         const authenticated = !d.auth_required || Boolean(d.authenticated);
         setAuthStatus({ loading: false, required: Boolean(d.auth_required), authenticated });
-        if (authenticated) loadConfigDefaults();
+        if (authenticated) loadConfigAndSession();
       })
       .catch(() => {
-        // Auth status endpoint unavailable: keep the local-mode experience
         setAuthStatus({ loading: false, required: false, authenticated: true });
-        loadConfigDefaults();
+        loadConfigAndSession();
       });
   }, []);
+
+  useEffect(() => {
+    animateContainerEntrance(mainContainerRef.current);
+    if (step === 2 || step === 3) {
+      animateStaggerItems(listContainerRef.current);
+    }
+  }, [step, reqFilter, step3Tab]);
+
+  useEffect(() => {
+    if (!isAnalyzing) return;
+    const start = performance.now();
+    let rafId = null;
+    const tick = (now) => {
+      setElapsedMs(now - start);
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId);
+    };
+  }, [isAnalyzing]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -252,12 +263,10 @@ export default function App() {
         body: JSON.stringify({ password }),
       });
       const data = await resp.json().catch(() => ({}));
-      if (!resp.ok) {
-        throw new Error(data.detail || 'Đăng nhập thất bại.');
-      }
+      if (!resp.ok) throw new Error(data.detail || 'Đăng nhập thất bại.');
       setAuthStatus({ loading: false, required: true, authenticated: true });
       setPassword('');
-      loadConfigDefaults();
+      loadConfigAndSession();
     } catch (err) {
       setLoginError(err.message);
     } finally {
@@ -265,18 +274,6 @@ export default function App() {
     }
   };
 
-  const handleLogout = async () => {
-    try {
-      await fetch('/api/auth/logout', { method: 'POST' });
-    } catch {
-      // Ignore network errors; the local UI still locks below
-    }
-    setResult(null);
-    setSelectedFile(null);
-    setAuthStatus((prev) => ({ ...prev, authenticated: false, required: true }));
-  };
-
-  // Update default model when provider changes
   const handleProviderChange = (newProv) => {
     setProvider(newProv);
     setErrorMsg('');
@@ -288,48 +285,28 @@ export default function App() {
     else if (newProv === 'ollama') setModelName('llama3');
   };
 
-  // Trigger JS entrance animation when switching views
-  useEffect(() => {
-    animateContainerEntrance(mainViewRef.current);
-  }, [activeView]);
+  const hasValidKey =
+    provider === 'local_nlp' ||
+    provider === 'ollama' ||
+    apiKey.trim().length >= 8 ||
+    (provider === 'groq' && envDefaults.has_env_groq) ||
+    (provider === 'gemini' && envDefaults.has_env_gemini) ||
+    (provider === 'openrouter' && envDefaults.has_env_openrouter);
 
-  // Live timer while the background job runs; steps come from the server
-  useEffect(() => {
-    if (!isAnalyzing) return;
-    const start = performance.now();
-    let rafId = null;
-
-    const tick = (now) => {
-      setElapsedMs(now - start);
-      rafId = requestAnimationFrame(tick);
-    };
-
-    rafId = requestAnimationFrame(tick);
-    return () => {
-      if (rafId) cancelAnimationFrame(rafId);
-    };
-  }, [isAnalyzing]);
-
-  // Derived metrics & animated numbers
   const totalReqs = result ? result.requirements.length : 0;
   const frCount = result ? result.requirements.filter((r) => r.req_type === 'FR').length : 0;
   const nfrCount = result ? result.requirements.filter((r) => r.req_type === 'NFR').length : 0;
   const ambiguousCount = result ? result.requirements.filter((r) => r.is_ambiguous).length : 0;
-  const clarityPct = totalReqs > 0 ? Math.round(((totalReqs - ambiguousCount) / totalReqs) * 100) : 0;
+  const cleanCount = totalReqs - ambiguousCount;
 
   const animTotal = useAnimatedNumber(totalReqs);
-  const animFr = useAnimatedNumber(frCount);
-  const animNfr = useAnimatedNumber(nfrCount);
-  const animClarity = useAnimatedNumber(clarityPct);
+  const animClean = useAnimatedNumber(cleanCount);
 
-  // Filtered requirements
   const filteredRequirements = useMemo(() => {
     if (!result) return [];
     return result.requirements.filter((r) => {
       if (reqFilter === 'ambiguous' && !r.is_ambiguous) return false;
       if (reqFilter === 'clean' && r.is_ambiguous) return false;
-      if (reqFilter === 'FR' && r.req_type !== 'FR') return false;
-      if (reqFilter === 'NFR' && r.req_type !== 'NFR') return false;
       if (reqSearch.trim()) {
         const q = reqSearch.trim().toLowerCase();
         if (!r.req_id.toLowerCase().includes(q) && !r.raw_text.toLowerCase().includes(q)) {
@@ -340,72 +317,24 @@ export default function App() {
     });
   }, [result, reqFilter, reqSearch]);
 
-  // Keep selectedReqId synced
-  const selectedReq = useMemo(() => {
-    if (!result || !result.requirements.length) return null;
-    return (
-      result.requirements.find((r) => r.req_id === selectedReqId) ||
-      filteredRequirements[0] ||
-      result.requirements[0]
-    );
-  }, [result, selectedReqId, filteredRequirements]);
-
-  useEffect(() => {
-    if (selectedReq) {
-      setCustomSmartText(selectedReq.smart_rewrite || selectedReq.raw_text);
-      setEditType(selectedReq.req_type);
-      setEditCategory(selectedReq.nfr_category || 'Performance');
-      animateInspectorPanel(reqInspectorRef.current);
-    }
-  }, [selectedReq?.req_id]);
-
-  useEffect(() => {
-    if (activeView === 'requirements') {
-      animateStaggerItems(reqListRef.current);
-    } else if (activeView === 'stories') {
-      animateStaggerItems(storyListRef.current);
-    }
-  }, [activeView, reqFilter]);
-
-  const selectedStory = useMemo(() => {
-    if (!result || !result.user_stories.length) return null;
-    return (
-      result.user_stories.find((u) => u.story_id === selectedStoryId) || result.user_stories[0]
-    );
-  }, [result, selectedStoryId]);
-
-  useEffect(() => {
-    if (selectedStory) {
-      animateInspectorPanel(storyInspectorRef.current);
-    }
-  }, [selectedStory?.story_id]);
-
-  const hasValidKey =
-    provider === 'local_nlp' ||
-    provider === 'ollama' ||
-    apiKey.trim().length >= 8 ||
-    (provider === 'groq' && envDefaults.has_env_groq) ||
-    (provider === 'gemini' && envDefaults.has_env_gemini) ||
-    (provider === 'openrouter' && envDefaults.has_env_openrouter);
-
-  // Execute real AI Analysis
   const handleRunAnalysis = async (e) => {
     e.preventDefault();
     setErrorMsg('');
 
     if (!hasValidKey) {
-      setErrorMsg('Vui lòng nhập API Key thực tế ở khung Kết nối AI bên trái trước khi phân tích.');
+      setShowAiModal(true);
+      setErrorMsg('Bạn đang chọn chế độ AI trực tuyến nhưng chưa nhập API Key. Hãy nhập API Key hoặc chuyển về Chế độ Tự động trên máy.');
       return;
     }
 
     if (!selectedFile && !rawText.trim()) {
-      setErrorMsg('Vui lòng tải lên tệp tài liệu (.docx / .txt) hoặc dán nội dung yêu cầu cần phân tích.');
+      setErrorMsg('Bạn hãy chọn một file tài liệu (.docx hoặc .txt) hoặc gõ nội dung mô tả vào ô bên dưới nhé.');
       return;
     }
 
     setIsAnalyzing(true);
     setActiveStepIdx(0);
-    setJobMessage('Đã gửi yêu cầu phân tích tới máy chủ...');
+    setJobMessage('Đang đọc tài liệu của bạn...');
     currentJobIdRef.current = null;
 
     try {
@@ -427,45 +356,38 @@ export default function App() {
 
       const submitted = await resp.json().catch(() => ({}));
       if (!resp.ok) {
-        throw new Error(submitted.detail || 'Lỗi khi gửi tài liệu tới máy chủ phân tích.');
-      }
-      if (!submitted.job_id) {
-        throw new Error('Máy chủ không trả về mã job phân tích.');
-      }
-      currentJobIdRef.current = submitted.job_id;
-
-      let job = null;
-      while (true) {
-        const jobResp = await fetch(`/api/jobs/${submitted.job_id}`);
-        const jobData = await jobResp.json().catch(() => ({}));
-        if (!jobResp.ok) {
-          throw new Error(jobData.detail || 'Không đọc được trạng thái job phân tích.');
-        }
-        job = jobData;
-        if (job.message) setJobMessage(job.message);
-        if (typeof job.step === 'number' && job.step > 0) {
-          setActiveStepIdx(Math.min(job.step - 1, PIPELINE_STEPS.length - 1));
-        }
-        if (job.status === 'succeeded') break;
-        if (job.status === 'failed') {
-          throw new Error(job.error || 'Phân tích thất bại trên máy chủ.');
-        }
-        if (job.status === 'cancelled') {
-          throw new Error('Đã hủy phân tích.');
-        }
-        await new Promise((resolve) => setTimeout(resolve, 500));
+        throw new Error(submitted.detail || 'Không thể phân tích tài liệu.');
       }
 
-      const data = job.result;
-      setActiveStepIdx(PIPELINE_STEPS.length);
-      setResult(data);
-      if (data?.requirements?.length > 0) {
-        setSelectedReqId(data.requirements[0].req_id);
+      if (submitted.job_id) {
+        currentJobIdRef.current = submitted.job_id;
+        let job = null;
+        while (true) {
+          const jobResp = await fetch(`/api/jobs/${submitted.job_id}`);
+          const jobData = await jobResp.json().catch(() => ({}));
+          if (!jobResp.ok) {
+            throw new Error(jobData.detail || 'Không đọc được tiến trình xử lý.');
+          }
+          job = jobData;
+          if (job.message) setJobMessage(job.message);
+          if (typeof job.step === 'number' && job.step > 0) {
+            setActiveStepIdx(Math.min(job.step - 1, PIPELINE_STEPS.length - 1));
+          }
+          if (job.status === 'succeeded') break;
+          if (job.status === 'failed') {
+            throw new Error(job.error || 'Quá trình phân tích gặp sự cố.');
+          }
+          if (job.status === 'cancelled') {
+            throw new Error('Đã dừng phân tích theo yêu cầu.');
+          }
+          await new Promise((resolve) => setTimeout(resolve, 400));
+        }
+        setResult(job.result);
+      } else {
+        setResult(submitted);
       }
-      if (data?.user_stories?.length > 0) {
-        setSelectedStoryId(data.user_stories[0].story_id);
-      }
-      setActiveView('requirements');
+
+      setStep(2);
     } catch (err) {
       setErrorMsg(err.message);
     } finally {
@@ -479,97 +401,98 @@ export default function App() {
     if (!jobId) return;
     try {
       await fetch(`/api/jobs/${jobId}/cancel`, { method: 'POST' });
-    } catch {
-      // Polling will report the final job state
-    }
+    } catch {}
   };
 
-  // Apply SMART rewrite for 1 requirement
-  const handleApplySmartSingle = async (reqId) => {
+  const handleAcceptSuggestion = async (reqId, suggestedText, cardEl) => {
     setIsUpdatingReq(true);
     try {
       const resp = await fetch(`/api/requirements/${reqId}/apply-smart`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ new_text: customSmartText }),
+        body: JSON.stringify({ new_text: suggestedText }),
       });
       const data = await resp.json();
       if (resp.ok) {
         setResult(data);
-        animateSuccessFlash(reqInspectorRef.current);
+        setEditingReqId(null);
+        animateSuccessFlash(cardEl || mainContainerRef.current);
       }
     } finally {
       setIsUpdatingReq(false);
     }
   };
 
-  // Apply SMART rewrite for ALL ambiguous requirements
-  const handleApplySmartAll = async () => {
+  const handleAcceptAllSuggestions = async () => {
     setIsUpdatingReq(true);
     try {
       const resp = await fetch('/api/requirements/apply-smart-all', { method: 'POST' });
       const data = await resp.json();
       if (resp.ok) {
         setResult(data);
-        animateSuccessFlash(reqInspectorRef.current);
+        animateSuccessFlash(mainContainerRef.current);
       }
     } finally {
       setIsUpdatingReq(false);
     }
   };
 
-  // Update FR/NFR classification
-  const handleUpdateType = async (reqId) => {
+  const handleSaveCustomEdit = async (req) => {
     setIsUpdatingReq(true);
     try {
-      const resp = await fetch(`/api/requirements/${reqId}/update-type`, {
+      const newText = (customTextMap[req.req_id] ?? req.raw_text).trim();
+      const newType = editTypeMap[req.req_id] ?? req.req_type;
+      const newCat = editCatMap[req.req_id] ?? (req.nfr_category || 'Performance');
+
+      if (newText && newText !== req.raw_text) {
+        await fetch(`/api/requirements/${req.req_id}/apply-smart`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ new_text: newText }),
+        });
+      }
+
+      const resp = await fetch(`/api/requirements/${req.req_id}/update-type`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          req_type: editType,
-          nfr_category: editType === 'NFR' ? editCategory : null,
+          req_type: newType,
+          nfr_category: newType === 'NFR' ? newCat : null,
         }),
       });
       const data = await resp.json();
       if (resp.ok) {
         setResult(data);
-        animateSuccessFlash(reqInspectorRef.current);
+        setEditingReqId(null);
       }
     } finally {
       setIsUpdatingReq(false);
     }
   };
 
-  // Sync handlers for Jira / GitHub / Trello
   const handleSyncApi = async (platform) => {
-    setSyncStatus({ loading: true, msg: 'Đang đồng bộ dữ liệu...', isError: false });
+    setSyncStatus({ loading: true, msg: 'Đang gửi dữ liệu...', isError: false });
     try {
-      let url = '';
-      let payload = {};
-      if (platform === 'jira') {
-        url = '/api/sync/jira';
-        payload = jiraForm;
-      } else if (platform === 'github') {
+      let url = '/api/sync/jira';
+      let payload = jiraForm;
+      if (platform === 'github') {
         url = '/api/sync/github';
         payload = ghForm;
-      } else {
+      } else if (platform === 'trello') {
         url = '/api/sync/trello';
         payload = trelloForm;
       }
-
       const resp = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
       const data = await resp.json();
-      if (!resp.ok) {
-        throw new Error(data.detail || 'Lỗi kết nối API');
-      }
-      if (data.errors && data.errors.length > 0) {
+      if (!resp.ok) throw new Error(data.detail || 'Lỗi kết nối');
+      if (data.errors?.length > 0) {
         setSyncStatus({
           loading: false,
-          msg: `Thành công ${data.success_count}, lỗi ${data.errors.length}: ${data.errors[0].error}`,
+          msg: `Đã tạo ${data.success_count}, lỗi ${data.errors.length}: ${data.errors[0].error}`,
           isError: true,
         });
       } else {
@@ -584,35 +507,12 @@ export default function App() {
     }
   };
 
-  const viewTitles = {
-    setup: {
-      title: 'Thiết lập Kết nối AI & Đưa Tài liệu Dự án vào',
-      sub: 'Tải lên file Word (.docx), file văn bản (.txt) hoặc dán nội dung yêu cầu thực tế để AI bóc tách',
-    },
-    requirements: {
-      title: '1. Danh sách Yêu cầu & Chỉnh sửa Câu mơ hồ (Chuẩn SMART)',
-      sub: 'Chọn một câu yêu cầu ở cột bên trái để xem phân tích chi tiết và áp dụng câu viết lại ở cột bên phải',
-    },
-    stories: {
-      title: '2. Kịch bản Người dùng (User Stories) & Tình huống Kiểm thử',
-      sub: 'Chọn một kịch bản ở cột bên trái để xem chi tiết Ai dùng - Muốn làm gì - Lợi ích gì và các bước kiểm thử',
-    },
-    srs: {
-      title: '3. Sơ đồ Chức năng (Use Case) & Xuất Báo cáo Đặc tả Word (.docx)',
-      sub: 'Xem trực tiếp sơ đồ tổng quan hệ thống và tải tài liệu đặc tả phần mềm 6 chương hoàn chỉnh',
-    },
-    sync: {
-      title: '4. Ma trận Truy vết Yêu cầu & Đồng bộ Jira / GitHub / Trello',
-      sub: 'Kiểm tra bảng ánh xạ yêu cầu 2 chiều và xuất dữ liệu sang các công cụ quản lý dự án',
-    },
-  };
-
   if (authStatus.loading) {
     return (
       <div className="auth-screen">
         <div className="auth-card">
-          <div className="brand-title">BA-Gen Studio</div>
-          <p className="auth-hint">Đang kiểm tra phiên đăng nhập...</p>
+          <div className="brand-name">BA-Gen</div>
+          <p style={{ color: '#64748B', marginTop: '6px' }}>Đang khởi tạo ứng dụng...</p>
         </div>
       </div>
     );
@@ -622,30 +522,38 @@ export default function App() {
     return (
       <div className="auth-screen">
         <form className="auth-card" onSubmit={handleLogin}>
-          <div className="brand-box" style={{ marginBottom: '18px' }}>
-            <div className="brand-logo">
-              <Icon name="key" size={20} />
+          <div className="brand-group" style={{ marginBottom: '18px' }}>
+            <div className="brand-icon">
+              <Icon name="file" size={20} />
             </div>
             <div>
-              <div className="brand-title">BA-Gen Studio</div>
-              <div className="brand-sub">Máy chủ yêu cầu đăng nhập</div>
+              <div className="brand-name">BA-Gen</div>
+              <div className="brand-tagline">Nhập mật khẩu để truy cập</div>
             </div>
           </div>
-          <label className="form-label" htmlFor="app-password">
-            Mật khẩu truy cập
+          <label className="field-label" htmlFor="app-password">
+            Mật khẩu
           </label>
           <input
             id="app-password"
-            className="form-input"
+            className="input-field"
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
             autoFocus
           />
-          {loginError && <div className="auth-error">{loginError}</div>}
-          <button type="submit" className="btn btn-primary" style={{ marginTop: '14px' }} disabled={isLoggingIn}>
-            {isLoggingIn ? 'Đang đăng nhập...' : 'Đăng nhập'}
+          {loginError && (
+            <div style={{ color: '#B91C1C', fontSize: '0.85rem', marginTop: '8px' }}>
+              {loginError}
+            </div>
+          )}
+          <button
+            type="submit"
+            className="btn btn-primary btn-lg"
+            style={{ marginTop: '14px' }}
+            disabled={isLoggingIn}
+          >
+            {isLoggingIn ? 'Đang kiểm tra...' : 'Đăng nhập'}
           </button>
         </form>
       </div>
@@ -653,1101 +561,1154 @@ export default function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div>
       {/* ====================================================================
-          LEFT NAVIGATION SIDEBAR (CLEAN & FOCUSED)
+          TOP HEADER BAR WITH SIMPLE 3-STEP WIZARD STEPPER
           ==================================================================== */}
-      <aside className="app-sidebar">
-        <div className="sidebar-top">
-          <div className="brand-box">
-            <div className="brand-logo">
-              <Icon name="blueprint" size={20} />
+      <header className="wizard-header">
+        <div className="wizard-header-inner">
+          <div className="brand-group">
+            <div className="brand-icon">
+              <Icon name="file" size={20} />
             </div>
             <div>
-              <div className="brand-title">BA-Gen Studio</div>
-              <div className="brand-sub">React · AI Requirements Assistant</div>
+              <div className="brand-name">BA-Gen</div>
+              <div className="brand-tagline">Trợ lý Viết Tài liệu Yêu cầu Phần mềm</div>
             </div>
           </div>
 
-          <div className="nav-section-label">Không gian làm việc</div>
-          <div className="nav-list">
+          {/* 3-STEP VISUAL WORKFLOW */}
+          <nav className="stepper-nav" aria-label="Quy trình 3 bước">
             <button
               type="button"
-              className={`nav-btn ${activeView === 'setup' ? 'is-active' : ''}`}
-              onClick={() => setActiveView('setup')}
+              className={`step-pill ${step === 1 ? 'active' : result ? 'completed' : ''}`}
+              onClick={() => setStep(1)}
             >
-              <span className="nav-btn-left">
-                <Icon name="upload" size={17} />
-                <span>Tài liệu &amp; Kết nối AI</span>
-              </span>
+              <span className="step-circle">{result && step !== 1 ? '✓' : '1'}</span>
+              <span>Bước 1: Nhập tài liệu</span>
             </button>
+
+            <span className="step-arrow">→</span>
 
             <button
               type="button"
               disabled={!result}
-              className={`nav-btn ${activeView === 'requirements' ? 'is-active' : ''}`}
-              onClick={() => setActiveView('requirements')}
+              className={`step-pill ${step === 2 ? 'active' : step > 2 ? 'completed' : ''}`}
+              onClick={() => setStep(2)}
             >
-              <span className="nav-btn-left">
-                <Icon name="list" size={17} />
-                <span>1. Yêu cầu &amp; Sửa mơ hồ</span>
-              </span>
-              {result && <span className="nav-count-pill">{totalReqs}</span>}
+              <span className="step-circle">{step > 2 ? '✓' : '2'}</span>
+              <span>Bước 2: Kiểm tra &amp; Làm rõ câu</span>
             </button>
+
+            <span className="step-arrow">→</span>
 
             <button
               type="button"
               disabled={!result}
-              className={`nav-btn ${activeView === 'stories' ? 'is-active' : ''}`}
-              onClick={() => setActiveView('stories')}
+              className={`step-pill ${step === 3 ? 'active' : ''}`}
+              onClick={() => setStep(3)}
             >
-              <span className="nav-btn-left">
-                <Icon name="users" size={17} />
-                <span>2. Kịch bản Người dùng</span>
-              </span>
-              {result && <span className="nav-count-pill">{result.user_stories.length}</span>}
+              <span className="step-circle">3</span>
+              <span>Bước 3: Tải Báo cáo Word &amp; Sơ đồ</span>
             </button>
+          </nav>
 
+          {/* OPTIONAL AI SETTINGS BUTTON (KEPT QUIET IN CORNER) */}
+          <div className="header-actions">
             <button
               type="button"
-              disabled={!result}
-              className={`nav-btn ${activeView === 'srs' ? 'is-active' : ''}`}
-              onClick={() => setActiveView('srs')}
+              className="btn btn-outline"
+              style={{ padding: '7px 13px', fontSize: '0.84rem' }}
+              onClick={() => setShowAiModal(true)}
             >
-              <span className="nav-btn-left">
-                <Icon name="file" size={17} />
-                <span>3. Sơ đồ &amp; File Word</span>
-              </span>
-            </button>
-
-            <button
-              type="button"
-              disabled={!result}
-              className={`nav-btn ${activeView === 'sync' ? 'is-active' : ''}`}
-              onClick={() => setActiveView('sync')}
-            >
-              <span className="nav-btn-left">
-                <Icon name="share" size={17} />
-                <span>4. Đồng bộ &amp; Truy vết</span>
-              </span>
-            </button>
-          </div>
-        </div>
-
-        <div className="sidebar-bottom">
-          <div className="ai-status-card">
-            <div className="ai-status-row">
-              <span className={`status-dot ${hasValidKey ? 'online' : 'missing'}`} />
+              <Icon name="settings" size={16} />
               <span>
-                {hasValidKey
-                  ? `Đã kết nối: ${provider.toUpperCase()}`
-                  : 'Chưa nhập API Key'}
-              </span>
-            </div>
-            <div style={{ color: '#94A3B8', fontSize: '0.73rem' }}>
-              {result
-                ? `Dự án: ${result.project.project_name}`
-                : 'Chọn mục "Tài liệu & Kết nối AI" để thiết lập'}
-            </div>
-          </div>
-          {authStatus.required && (
-            <button type="button" className="nav-btn" onClick={handleLogout} style={{ marginTop: '10px' }}>
-              <span className="nav-btn-left">
-                <Icon name="key" size={17} />
-                <span>Đăng xuất</span>
+                {provider === 'local_nlp'
+                  ? 'Chế độ: Tự động trên máy'
+                  : `AI: ${provider.toUpperCase()}`}
               </span>
             </button>
-          )}
+          </div>
         </div>
-      </aside>
+      </header>
 
       {/* ====================================================================
-          MAIN WORKSPACE AREA
+          MAIN GUIDED WORKSPACE
           ==================================================================== */}
-      <div className="app-main">
-        {/* TOP HEADER BAR WITH ANIMATED JS METRICS */}
-        <header className="topbar">
+      <main
+        className={`wizard-main ${step === 1 ? 'narrow' : ''}`}
+        ref={mainContainerRef}
+      >
+        {/* ==================================================================
+            BƯỚC 1: NHẬP TÀI LIỆU HOẶC Ý TƯỞNG (GỌN GÀNG, DỄ HIỂU 100%)
+            ================================================================== */}
+        {step === 1 && (
           <div>
-            <div className="topbar-title">{viewTitles[activeView].title}</div>
-            <div className="topbar-sub">{viewTitles[activeView].sub}</div>
-          </div>
-
-          {result && (
-            <div className="topbar-metrics">
-              <div className="metric-chip">
-                <span>Tổng:</span>
-                <strong>{animTotal} câu</strong>
-              </div>
-              <div className="metric-chip" style={{ color: '#0F766E' }}>
-                <span>Tính năng:</span>
-                <strong>{animFr}</strong>
-              </div>
-              <div className="metric-chip" style={{ color: '#1D4ED8' }}>
-                <span>Chất lượng:</span>
-                <strong>{animNfr}</strong>
-              </div>
-              <div className="metric-chip" style={{ color: clarityPct >= 80 ? '#15803D' : '#B45309' }}>
-                <span>Độ rõ ràng:</span>
-                <strong>{animClarity}%</strong>
-              </div>
-              <a href="/api/export/srs-docx" className="btn btn-primary" style={{ padding: '7px 13px', fontSize: '0.82rem' }}>
-                <Icon name="file" size={15} />
-                <span>Tải File Word (.docx)</span>
-              </a>
+            <div className="hero-intro">
+              <h1>Bước 1: Đưa tài liệu hoặc mô tả phần mềm vào đây</h1>
+              <p>
+                Bạn chỉ cần tải file Word (<code>.docx</code>) lên hoặc dán đoạn văn mô tả yêu cầu.
+                Hệ thống sẽ tự động tách từng ý, gợi ý sửa những câu viết còn chung chung và xuất sẵn file Báo cáo Word.
+              </p>
             </div>
-          )}
-        </header>
 
-        {/* FOCUSED SINGLE-SCREEN WORKSPACE */}
-        <main className="workspace-body" ref={mainViewRef}>
-          {/* ================================================================
-              SCREEN 1: SETUP AI & UPLOAD REAL DOCUMENT
-              ================================================================ */}
-          {activeView === 'setup' && (
-            <form className="setup-grid" onSubmit={handleRunAnalysis}>
-              {/* LEFT CARD: AI CONNECTION */}
-              <div className="panel-card">
-                <div className="panel-header">
-                  <div className="panel-title-group">
-                    <div className="panel-icon">
-                      <Icon name="key" size={18} />
-                    </div>
-                    <div>
-                      <div className="panel-title">1. Kết nối Mô hình AI</div>
-                      <div className="panel-subtitle">Nhập khóa API để phân tích dữ liệu thật</div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Chọn Bộ máy Xử lý Ngôn ngữ &amp; AI</label>
-                  <select
-                    className="form-select"
-                    value={provider}
-                    onChange={(e) => handleProviderChange(e.target.value)}
-                  >
-                    <option value="local_nlp">
-                      Mô hình NLP &amp; Học máy Tích hợp trên máy (Chạy ngay - Không cần API Key)
-                    </option>
-                    <option value="groq">Groq Cloud AI (Llama 3.3 70B - Cần nhập API Key)</option>
-                    <option value="gemini">Google Gemini AI (Gemini 1.5 Flash - Cần nhập API Key)</option>
-                    <option value="openrouter">OpenRouter AI (Đa mô hình - Cần nhập API Key)</option>
-                    <option value="ollama">Ollama Local Server (localhost:11434)</option>
-                  </select>
-                </div>
-
-                {provider !== 'ollama' && provider !== 'local_nlp' && (
-                  <div className="form-group">
-                    <label className="form-label">
-                      Mã khóa API Key ({provider.toUpperCase()})
-                    </label>
-                    <input
-                      type="password"
-                      className="form-input"
-                      placeholder={
-                        provider === 'groq'
-                          ? 'Dán khóa gsk_... vào đây'
-                          : provider === 'gemini'
-                          ? 'Dán khóa AIza... vào đây'
-                          : 'Dán khóa sk-or-... vào đây'
-                      }
-                      value={apiKey}
-                      onChange={(e) => setApiKey(e.target.value)}
-                    />
-                  </div>
-                )}
-
-                <div className="form-group">
-                  <label className="form-label">Mô hình xử lý</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={modelName}
-                    disabled={provider === 'local_nlp'}
-                    onChange={(e) => setModelName(e.target.value)}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label" htmlFor="confidence-threshold">
-                    Ngưỡng tin cậy để chuyển sang LLM: {Math.round(confidenceThreshold * 100)}%
-                  </label>
-                  <input
-                    id="confidence-threshold"
-                    type="range"
-                    className="form-input"
-                    min="0.5"
-                    max="0.99"
-                    step="0.01"
-                    value={confidenceThreshold}
-                    onChange={(e) => setConfidenceThreshold(Number(e.target.value))}
-                  />
-                  <div style={{ fontSize: '0.78rem', color: '#64748B', marginTop: '4px' }}>
-                    Câu có độ tin cậy của mô hình máy học thấp hơn ngưỡng này sẽ được gửi sang LLM (nếu đã kết nối).
-                  </div>
-                </div>
-
+            <form className="card" onSubmit={handleRunAnalysis}>
+              {errorMsg && (
                 <div
                   style={{
-                    padding: '12px 14px',
-                    borderRadius: '8px',
-                    fontSize: '0.83rem',
-                    background: hasValidKey ? '#F0FDF4' : '#FFFBEB',
-                    border: `1px solid ${hasValidKey ? '#86EFAC' : '#FCD34D'}`,
-                    color: hasValidKey ? '#166534' : '#92400E',
+                    background: '#FEF2F2',
+                    border: '1px solid #FCA5A5',
+                    color: '#B91C1C',
+                    padding: '12px 16px',
+                    borderRadius: '10px',
+                    fontSize: '0.9rem',
+                    marginBottom: '18px',
+                    fontWeight: 500,
                   }}
                 >
-                  {provider === 'local_nlp' ? (
-                    <>
-                      <strong>Sẵn sàng chạy trực tiếp trên máy:</strong> Sử dụng thuật toán tách câu NLP song ngữ và mô hình học máy <code>scikit-learn LinearSVC</code> để phân tích trực tiếp file <code>.docx / .txt</code> bạn tải lên mà không cần API Key.
-                    </>
-                  ) : provider === 'ollama' && !envDefaults.ollama_running ? (
-                    <>
-                      <strong>Lưu ý Ollama (cổng 11434):</strong> Máy hiện chưa bật dịch vụ Ollama ở cổng 11434, hệ thống sẽ tự động chuyển sang <strong>Mô hình NLP &amp; Học máy Tích hợp trên máy</strong> để phân tích tài liệu của bạn mà không bị lỗi kết nối.
-                    </>
-                  ) : hasValidKey ? (
-                    <>
-                      <strong>Đã sẵn sàng kết nối AI ({provider.toUpperCase()}):</strong> Bạn có thể tải tài liệu thực tế ở khung bên phải và bắt đầu phân tích.
-                    </>
-                  ) : (
-                    <>
-                      <strong>Chưa có API Key:</strong> Vui lòng dán API Key vào ô trên, hoặc chuyển sang <em>"Mô hình NLP &amp; Học máy Tích hợp trên máy"</em> nếu muốn chạy trực tiếp không cần Key.
-                    </>
-                  )}
+                  {errorMsg}
                 </div>
-              </div>
+              )}
 
-              {/* RIGHT CARD: REAL DOCUMENT UPLOAD & INPUT */}
-              <div className="panel-card">
-                <div className="panel-header">
-                  <div className="panel-title-group">
-                    <div className="panel-icon">
-                      <Icon name="upload" size={18} />
-                    </div>
+              {/* 1. FILE UPLOAD BOX */}
+              <div>
+                <label className="field-label">
+                  Cách 1: Chọn file tài liệu từ máy tính (.docx hoặc .txt)
+                </label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".docx,.txt"
+                  style={{ display: 'none' }}
+                  onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                />
+                <div
+                  className={`upload-box ${selectedFile ? 'has-file' : ''}`}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <div className="upload-icon-circle">
+                    <Icon name={selectedFile ? 'check' : 'upload'} size={22} />
+                  </div>
+                  {selectedFile ? (
                     <div>
-                      <div className="panel-title">2. Tài liệu Yêu cầu Thực tế của Dự án</div>
-                      <div className="panel-subtitle">
-                        Hỗ trợ tải tệp Microsoft Word (.docx), tệp văn bản (.txt) hoặc dán trực tiếp
+                      <div style={{ fontWeight: 700, color: '#15803D', fontSize: '1rem' }}>
+                        Đã chọn file: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
+                      </div>
+                      <div style={{ fontSize: '0.84rem', color: '#166534', marginTop: '4px' }}>
+                        Bạn có thể bấm nút "Bắt đầu Phân tích" ở dưới ngay, hoặc bấm vào đây để chọn file khác
                       </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div>
+                      <div style={{ fontWeight: 700, color: '#1D4ED8', fontSize: '1rem' }}>
+                        Bấm vào đây để chọn file Word (.docx) hoặc file văn bản (.txt)
+                      </div>
+                      <div style={{ fontSize: '0.84rem', color: '#64748B', marginTop: '4px' }}>
+                        Đọc được cả nội dung chữ lẫn các bảng biểu bên trong file Word
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                {errorMsg && (
-                  <div
-                    style={{
-                      background: '#FEF2F2',
-                      border: '1px solid #FCA5A5',
-                      color: '#B91C1C',
-                      padding: '12px 14px',
-                      borderRadius: '8px',
-                      fontSize: '0.88rem',
-                      marginBottom: '16px',
-                      fontWeight: 500,
-                    }}
-                  >
-                    {errorMsg}
-                  </div>
-                )}
-
-                <div className="form-group">
-                  <label className="form-label">Tên Dự án / Hệ thống phần mềm</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="Nhập tên dự án của bạn (hoặc để trống để lấy tự động theo tên file)..."
-                    value={projectName}
-                    onChange={(e) => setProjectName(e.target.value)}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Tải lên file tài liệu (.docx hoặc .txt)</label>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".docx,.txt"
-                    style={{ display: 'none' }}
-                    onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
-                  />
-                  <div
-                    className={`dropzone ${selectedFile ? 'has-file' : ''}`}
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <div style={{ fontWeight: 600, color: '#1E3A8A', marginBottom: '4px' }}>
-                      {selectedFile
-                        ? `Đã chọn tệp: ${selectedFile.name} (${(selectedFile.size / 1024).toFixed(1)} KB)`
-                        : 'Nhấn vào đây để chọn tệp tài liệu (.docx, .txt) từ máy tính'}
-                    </div>
-                    <div style={{ fontSize: '0.8rem', color: '#64748B' }}>
-                      {selectedFile
-                        ? 'Nhấn để đổi tệp khác'
-                        : 'Đọc được cả đoạn văn và bảng biểu trong file Word (.docx)'}
-                    </div>
-                  </div>
-                  {selectedFile && (
+                {selectedFile && (
+                  <div style={{ marginTop: '8px', textAlign: 'right' }}>
                     <button
                       type="button"
                       className="btn btn-outline"
-                      style={{ padding: '5px 10px', fontSize: '0.78rem', marginBottom: '8px' }}
+                      style={{ padding: '5px 12px', fontSize: '0.8rem' }}
                       onClick={() => setSelectedFile(null)}
                     >
-                      Gỡ tệp đã chọn
+                      Bỏ chọn file này
                     </button>
-                  )}
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">
-                    Hoặc dán trực tiếp nội dung mô tả yêu cầu phần mềm vào đây:
-                  </label>
-                  <textarea
-                    className="form-textarea"
-                    placeholder="Dán nội dung mô tả bài toán, biên bản khảo sát khách hàng hoặc danh sách yêu cầu của bạn vào đây..."
-                    value={rawText}
-                    onChange={(e) => setRawText(e.target.value)}
-                  />
-                  <div style={{ fontSize: '0.78rem', color: '#64748B', marginTop: '4px' }}>
-                    Độ dài hiện tại: {rawText.trim().length} ký tự
                   </div>
-                </div>
+                )}
+              </div>
 
-                <button type="submit" className="btn btn-primary btn-full" disabled={isAnalyzing}>
-                  <Icon name="sparkles" size={18} />
-                  <span>Bắt đầu Phân tích Tài liệu Thực tế với AI</span>
+              <div className="or-divider">HOẶC</div>
+
+              {/* 2. PASTE RAW TEXT */}
+              <div style={{ marginBottom: '18px' }}>
+                <label className="field-label">
+                  Cách 2: Gõ hoặc dán trực tiếp nội dung mô tả yêu cầu vào ô dưới đây
+                </label>
+                <textarea
+                  className="textarea-field"
+                  placeholder={
+                    'Ví dụ:\n' +
+                    '- Khách hàng có thể đăng ký tài khoản và đặt mua sản phẩm trực tuyến.\n' +
+                    '- Trang thanh toán của phần mềm phải chạy thật nhanh và dễ sử dụng.'
+                  }
+                  value={rawText}
+                  onChange={(e) => setRawText(e.target.value)}
+                />
+              </div>
+
+              {/* 3. OPTIONAL PROJECT NAME */}
+              <div style={{ marginBottom: '22px' }}>
+                <label className="field-label">
+                  Tên dự án / phần mềm của bạn (Không bắt buộc)
+                </label>
+                <input
+                  type="text"
+                  className="input-field"
+                  placeholder="Ví dụ: Phần mềm Quản lý Bán hàng (Nếu để trống sẽ tự lấy theo tên file)"
+                  value={projectName}
+                  onChange={(e) => setProjectName(e.target.value)}
+                />
+              </div>
+
+              <button type="submit" className="btn btn-primary btn-lg" disabled={isAnalyzing}>
+                <Icon name="sparkles" size={20} />
+                <span>Bắt đầu Phân tích Tài liệu →</span>
+              </button>
+            </form>
+
+            {/* 3 MINI EXPLANATION CARDS */}
+            <div className="how-it-works-grid">
+              <div className="mini-guide-card">
+                <div className="mini-guide-num">Kết quả 1</div>
+                <div className="mini-guide-title">Sửa các câu viết chung chung</div>
+                <div className="mini-guide-desc">
+                  Tự động phát hiện các từ mơ hồ như <em>"nhanh", "dễ dùng"</em> và gợi ý câu viết lại rõ ràng, có con số cụ thể.
+                </div>
+              </div>
+              <div className="mini-guide-card">
+                <div className="mini-guide-num">Kết quả 2</div>
+                <div className="mini-guide-title">Kịch bản &amp; Sơ đồ trực quan</div>
+                <div className="mini-guide-desc">
+                  Diễn giải rõ ai là người dùng, họ muốn làm gì và tự động vẽ sơ đồ tổng quan các chức năng của hệ thống.
+                </div>
+              </div>
+              <div className="mini-guide-card">
+                <div className="mini-guide-num">Kết quả 3</div>
+                <div className="mini-guide-title">File Báo cáo Word (.docx)</div>
+                <div className="mini-guide-desc">
+                  Tạo sẵn file tài liệu đặc tả phần mềm 6 phần bài bản để bạn tải về máy chỉ với 1 cú nhấp chuột.
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ==================================================================
+            BƯỚC 2: KIỂM TRA & LÀM RÕ CÁC CÂU YÊU CẦU (RÕ RÀNG, TỪNG CÂU MỘT)
+            ================================================================== */}
+        {step === 2 && result && (
+          <div>
+            {result.warnings?.length > 0 && (
+              <div
+                style={{
+                  background: '#FFFBEB',
+                  border: '1px solid #FCD34D',
+                  color: '#92400E',
+                  padding: '12px 16px',
+                  borderRadius: '10px',
+                  marginBottom: '16px',
+                  fontSize: '0.9rem',
+                }}
+              >
+                {result.warnings.map((w, i) => (
+                  <div key={i}>{w}</div>
+                ))}
+              </div>
+            )}
+
+            {/* GUIDED ACTION BANNER */}
+            <div className={`guided-banner ${ambiguousCount > 0 ? 'has-warnings' : 'all-clean'}`}>
+              <div style={{ flex: 1, minWidth: '260px' }}>
+                <div style={{ fontSize: '1.15rem', fontWeight: 700, color: '#0F172A', marginBottom: '4px' }}>
+                  {ambiguousCount > 0
+                    ? `Tìm thấy ${animTotal} yêu cầu — Có ${ambiguousCount} câu nên viết rõ ràng hơn`
+                    : `Tuyệt vời! Cả ${animTotal} câu yêu cầu của bạn đều đã rất rõ ràng`}
+                </div>
+                <div style={{ fontSize: '0.9rem', color: '#475569' }}>
+                  {ambiguousCount > 0
+                    ? 'Những câu có khung màu xanh lá bên dưới là những câu đang dùng từ chung chung (như "nhanh", "dễ dùng"). Bạn có thể bấm nút áp dụng gợi ý để làm rõ ngay.'
+                    : `Gồm ${frCount} tính năng phần mềm và ${nfrCount} yêu cầu về chất lượng/tốc độ. Bạn có thể bấm tiếp tục sang Bước 3 để tải file Báo cáo Word.`}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                {ambiguousCount > 0 && (
+                  <button
+                    type="button"
+                    className="btn btn-success"
+                    disabled={isUpdatingReq}
+                    onClick={handleAcceptAllSuggestions}
+                  >
+                    <Icon name="sparkles" size={17} />
+                    <span>Tự động làm rõ cả {ambiguousCount} câu này</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => setStep(3)}
+                >
+                  <span>Sang Bước 3: Tải Báo cáo Word &amp; Sơ đồ</span>
+                  <Icon name="arrow-right" size={17} />
                 </button>
               </div>
-            </form>
-          )}
+            </div>
 
-          {/* ================================================================
-              SCREEN 2: REQUIREMENTS & SMART REFINEMENT (MASTER-DETAIL)
-              ================================================================ */}
-          {activeView === 'requirements' && result && (
-            <div>
-              {/* FILTER & BATCH ACTION TOOLBAR */}
-              <div className="toolbar-row">
-                <div className="filter-pills">
-                  {[
-                    { id: 'all', label: `Tất cả (${totalReqs})` },
-                    { id: 'ambiguous', label: `Cần làm rõ (${ambiguousCount})` },
-                    { id: 'clean', label: `Đã rõ ràng (${totalReqs - ambiguousCount})` },
-                    { id: 'FR', label: `Tính năng (${frCount})` },
-                    { id: 'NFR', label: `Chất lượng (${nfrCount})` },
-                  ].map((tab) => (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      className={`pill-btn ${reqFilter === tab.id ? 'active' : ''}`}
-                      onClick={() => setReqFilter(tab.id)}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                  <input
-                    type="text"
-                    className="form-input"
-                    style={{ width: '240px', padding: '7px 12px', fontSize: '0.84rem' }}
-                    placeholder="Tìm theo mã REQ hoặc từ khóa..."
-                    value={reqSearch}
-                    onChange={(e) => setReqSearch(e.target.value)}
-                  />
-                  {ambiguousCount > 0 && (
-                    <button
-                      type="button"
-                      className="btn btn-success"
-                      style={{ padding: '7px 13px', fontSize: '0.82rem' }}
-                      disabled={isUpdatingReq}
-                      onClick={handleApplySmartAll}
-                    >
-                      <Icon name="sparkles" size={15} />
-                      <span>Áp dụng gợi ý cho tất cả ({ambiguousCount} câu)</span>
-                    </button>
-                  )}
-                </div>
+            {/* SIMPLE 3-OPTION FILTER BAR */}
+            <div className="filter-bar">
+              <div className="filter-tabs">
+                <button
+                  type="button"
+                  className={`filter-tab ${reqFilter === 'all' ? 'active' : ''}`}
+                  onClick={() => setReqFilter('all')}
+                >
+                  Tất cả ({totalReqs} câu)
+                </button>
+                <button
+                  type="button"
+                  className={`filter-tab ${reqFilter === 'ambiguous' ? 'active' : ''}`}
+                  onClick={() => setReqFilter('ambiguous')}
+                >
+                  Cần làm rõ thêm ({ambiguousCount} câu)
+                </button>
+                <button
+                  type="button"
+                  className={`filter-tab ${reqFilter === 'clean' ? 'active' : ''}`}
+                  onClick={() => setReqFilter('clean')}
+                >
+                  Đã rõ ràng ({animClean} câu)
+                </button>
               </div>
 
-              {/* MASTER-DETAIL SPLIT GRID */}
-              <div className="master-detail-grid">
-                {/* LEFT PANE: SCANNABLE REQUIREMENT LIST */}
-                <div className="master-list" ref={reqListRef}>
-                  {filteredRequirements.map((req) => (
-                    <div
-                      key={req.req_id}
-                      className={`list-item-card js-stagger-item ${
-                        selectedReq?.req_id === req.req_id ? 'selected' : ''
-                      }`}
-                      onClick={() => setSelectedReqId(req.req_id)}
-                    >
-                      <div className="list-item-top">
-                        <div className="list-item-badges">
-                          <span className="badge badge-id">{req.req_id}</span>
-                          <span className={`badge ${req.req_type === 'FR' ? 'badge-fr' : 'badge-nfr'}`}>
-                            {req.req_type === 'FR' ? 'Tính năng (FR)' : 'Chất lượng (NFR)'}
-                          </span>
-                          {req.nfr_category && (
-                            <span className="badge badge-neutral">
-                              {ISO_VI_MAP[req.nfr_category] || req.nfr_category}
-                            </span>
-                          )}
-                        </div>
-                        <span className={`badge ${req.is_ambiguous ? 'badge-warn' : 'badge-ok'}`}>
-                          {req.is_ambiguous ? 'Cần làm rõ' : 'Đã rõ ràng'}
-                        </span>
-                      </div>
-                      <div className="list-item-text">
-                        <HighlightedText text={req.raw_text} vagueTerms={req.vague_terms} />
-                      </div>
-                    </div>
-                  ))}
-                  {filteredRequirements.length === 0 && (
-                    <div className="panel-card" style={{ textAlign: 'center', color: '#64748B' }}>
-                      Không có câu yêu cầu nào khớp với bộ lọc hiện tại.
-                    </div>
-                  )}
-                </div>
+              <input
+                type="text"
+                className="input-field"
+                style={{ width: '250px', padding: '8px 14px', fontSize: '0.88rem' }}
+                placeholder="Tìm nhanh theo từ khóa..."
+                value={reqSearch}
+                onChange={(e) => setReqSearch(e.target.value)}
+              />
+            </div>
 
-                {/* RIGHT PANE: FOCUSED INSPECTOR FOR SELECTED REQUIREMENT */}
-                {selectedReq && (
-                  <div className="detail-inspector" ref={reqInspectorRef}>
-                    <div className="panel-header">
+            {/* SINGLE-COLUMN SPACIOUS REQUIREMENT CARDS */}
+            <div ref={listContainerRef}>
+              {filteredRequirements.map((req, index) => {
+                const isEditing = editingReqId === req.req_id;
+                const categoryVi = req.nfr_category
+                  ? ISO_VI_MAP[req.nfr_category] || req.nfr_category
+                  : null;
+
+                return (
+                  <div
+                    key={req.req_id}
+                    className={`req-review-card js-stagger-item ${
+                      req.is_ambiguous ? 'needs-attention' : ''
+                    }`}
+                  >
+                    <div className="req-card-top">
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                        <span className="badge badge-id" style={{ fontSize: '0.85rem', padding: '4px 10px' }}>
-                          {selectedReq.req_id}
-                        </span>
-                        <span
-                          className={`badge ${selectedReq.req_type === 'FR' ? 'badge-fr' : 'badge-nfr'}`}
-                        >
-                          {selectedReq.req_type === 'FR'
-                            ? 'Tính năng hệ thống (Chức năng)'
-                            : 'Yêu cầu Chất lượng (Phi chức năng)'}
-                        </span>
-                        <span className="badge badge-neutral">
-                          Độ tin cậy: {Math.round(selectedReq.confidence * 100)}%
+                        <span className="badge badge-num">Câu #{index + 1} ({req.req_id})</span>
+                        <span className={`badge ${req.req_type === 'FR' ? 'badge-fr' : 'badge-nfr'}`}>
+                          {req.req_type === 'FR'
+                            ? 'Tính năng phần mềm'
+                            : `Yêu cầu chất lượng${categoryVi ? ` · ${categoryVi}` : ''}`}
                         </span>
                       </div>
-                      <span className={`badge ${selectedReq.is_ambiguous ? 'badge-warn' : 'badge-ok'}`}>
-                        {selectedReq.is_ambiguous ? 'Cần làm rõ thêm' : 'Đã viết rõ ràng'}
-                      </span>
-                    </div>
 
-                    {/* ORIGINAL REQUIREMENT */}
-                    <div className="compare-box original">
-                      <div className="compare-label" style={{ color: '#475569' }}>
-                        Nội dung yêu cầu hiện tại
-                      </div>
-                      <div>
-                        <HighlightedText
-                          text={selectedReq.raw_text}
-                          vagueTerms={selectedReq.vague_terms}
-                        />
-                      </div>
-                    </div>
-
-                    {/* WHY IT NEEDS CLARIFICATION */}
-                    {selectedReq.is_ambiguous && (
-                      <div className="compare-box warning">
-                        <div className="compare-label">Vì sao câu này cần làm rõ thêm?</div>
-                        <ul style={{ paddingLeft: '18px', fontSize: '0.86rem' }}>
-                          {selectedReq.vague_terms?.length > 0 && (
-                            <li>
-                              Chứa từ mang tính cảm tính: <strong>{selectedReq.vague_terms.join(', ')}</strong> (nên thay bằng con số đo lường cụ thể).
-                            </li>
-                          )}
-                          {selectedReq.missing_actor && (
-                            <li>Chưa nêu rõ ai là người sử dụng hoặc thực hiện chức năng này.</li>
-                          )}
-                          {selectedReq.missing_metric && (
-                            <li>Yêu cầu về chất lượng nhưng chưa có ngưỡng đo lường cụ thể (thời gian, tỷ lệ %...).</li>
-                          )}
-                        </ul>
-                      </div>
-                    )}
-
-                    {/* SMART REWRITE SUGGESTION & INLINE EDITOR */}
-                    <div className="compare-box smart">
-                      <div className="compare-label">
-                        <Icon name="sparkles" size={15} />
-                        <span>Gợi ý viết lại rõ ràng &amp; đầy đủ thông số (Chuẩn SMART)</span>
-                      </div>
-                      <textarea
-                        className="form-textarea"
-                        style={{
-                          minHeight: '90px',
-                          marginTop: '6px',
-                          background: '#FFFFFF',
-                          fontSize: '0.88rem',
-                        }}
-                        value={customSmartText}
-                        onChange={(e) => setCustomSmartText(e.target.value)}
-                      />
-                      <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'flex-end' }}>
-                        <button
-                          type="button"
-                          className="btn btn-success"
-                          disabled={isUpdatingReq}
-                          onClick={() => handleApplySmartSingle(selectedReq.req_id)}
-                        >
-                          <Icon name="check" size={16} />
-                          <span>Áp dụng câu viết lại này cho {selectedReq.req_id}</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* MANUAL CLASSIFICATION EDITOR */}
-                    <div
-                      style={{
-                        borderTop: '1px solid #E2E8F0',
-                        paddingTop: '14px',
-                        marginTop: '14px',
-                      }}
-                    >
-                      <div className="form-label" style={{ marginBottom: '8px' }}>
-                        Đổi phân loại yêu cầu thủ công (nếu cần):
-                      </div>
-                      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                        <select
-                          className="form-select"
-                          style={{ flex: '1', minWidth: '150px' }}
-                          value={editType}
-                          onChange={(e) => setEditType(e.target.value)}
-                        >
-                          <option value="FR">Tính năng hệ thống (FR)</option>
-                          <option value="NFR">Yêu cầu chất lượng (NFR)</option>
-                        </select>
-
-                        {editType === 'NFR' && (
-                          <select
-                            className="form-select"
-                            style={{ flex: '1.3', minWidth: '180px' }}
-                            value={editCategory}
-                            onChange={(e) => setEditCategory(e.target.value)}
-                          >
-                            {ISO_KEYS.map((k) => (
-                              <option key={k} value={k}>
-                                {ISO_VI_MAP[k]} ({k})
-                              </option>
-                            ))}
-                          </select>
-                        )}
-
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span className={`badge ${req.is_ambiguous ? 'badge-warn' : 'badge-ok'}`}>
+                          {req.is_ambiguous ? 'Đang viết hơi chung chung' : '✓ Đã viết rõ ràng'}
+                        </span>
                         <button
                           type="button"
                           className="btn btn-outline"
-                          disabled={isUpdatingReq}
-                          onClick={() => handleUpdateType(selectedReq.req_id)}
+                          style={{ padding: '4px 10px', fontSize: '0.78rem', borderRadius: '6px' }}
+                          onClick={() => {
+                            if (isEditing) {
+                              setEditingReqId(null);
+                            } else {
+                              setCustomTextMap((prev) => ({
+                                ...prev,
+                                [req.req_id]: req.smart_rewrite || req.raw_text,
+                              }));
+                              setEditTypeMap((prev) => ({ ...prev, [req.req_id]: req.req_type }));
+                              setEditCatMap((prev) => ({
+                                ...prev,
+                                [req.req_id]: req.nfr_category || 'Performance',
+                              }));
+                              setEditingReqId(req.req_id);
+                            }
+                          }}
                         >
-                          Lưu phân loại
+                          {isEditing ? 'Đóng khung sửa' : 'Tự sửa câu này'}
                         </button>
                       </div>
                     </div>
+
+                    {/* SENTENCE CONTENT */}
+                    <div className="req-sentence">
+                      <HighlightedText text={req.raw_text} vagueTerms={req.vague_terms} />
+                    </div>
+
+                    {/* IF AMBIGUOUS: SHOW CLEAN 1-CLICK SUGGESTION */}
+                    {req.is_ambiguous && req.smart_rewrite && !isEditing && (
+                      <div className="suggestion-panel">
+                        <div className="suggestion-reason">
+                          <strong>Điểm cần làm rõ: </strong>
+                          {req.vague_terms?.length > 0 && (
+                            <span>
+                              Câu này đang dùng từ cảm tính (<strong>{req.vague_terms.join(', ')}</strong>) chưa có con số đo lường cụ thể.{' '}
+                            </span>
+                          )}
+                          {req.missing_actor && (
+                            <span>Chưa ghi rõ ai là người thực hiện tính năng này. </span>
+                          )}
+                          {req.missing_metric && (
+                            <span>Chưa có con số tiêu chuẩn cụ thể (ví dụ: bao nhiêu giây, bao nhiêu %).</span>
+                          )}
+                        </div>
+
+                        <div className="suggestion-row">
+                          <div className="suggestion-text">
+                            <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#15803D', marginBottom: '2px' }}>
+                              GỢI Ý VIẾT LẠI RÕ RÀNG HƠN:
+                            </div>
+                            {req.smart_rewrite}
+                          </div>
+
+                          <button
+                            type="button"
+                            className="btn btn-success"
+                            style={{ flexShrink: 0 }}
+                            disabled={isUpdatingReq}
+                            onClick={(e) =>
+                              handleAcceptSuggestion(
+                                req.req_id,
+                                req.smart_rewrite,
+                                e.currentTarget.closest('.req-review-card')
+                              )
+                            }
+                          >
+                            <Icon name="check" size={16} />
+                            <span>Dùng câu gợi ý này</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* OPTIONAL INLINE EDITOR (ONLY SHOWN WHEN USER CLICKS "TỰ SỬA CÂU NÀY") */}
+                    {isEditing && (
+                      <div
+                        style={{
+                          marginTop: '14px',
+                          padding: '16px',
+                          background: '#F8FAFC',
+                          border: '1px solid #CBD5E1',
+                          borderRadius: '10px',
+                        }}
+                      >
+                        <label className="field-label" style={{ fontSize: '0.84rem' }}>
+                          Sửa lại nội dung câu yêu cầu theo ý bạn:
+                        </label>
+                        <textarea
+                          className="textarea-field"
+                          style={{ minHeight: '85px', marginBottom: '12px', fontSize: '0.92rem' }}
+                          value={customTextMap[req.req_id] ?? req.raw_text}
+                          onChange={(e) =>
+                            setCustomTextMap((prev) => ({ ...prev, [req.req_id]: e.target.value }))
+                          }
+                        />
+
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '12px',
+                            flexWrap: 'wrap',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '0.84rem', fontWeight: 600, color: '#475569' }}>
+                              Nhóm yêu cầu:
+                            </span>
+                            <select
+                              className="select-field"
+                              style={{ width: 'auto', padding: '7px 12px', fontSize: '0.86rem' }}
+                              value={editTypeMap[req.req_id] ?? req.req_type}
+                              onChange={(e) =>
+                                setEditTypeMap((prev) => ({ ...prev, [req.req_id]: e.target.value }))
+                              }
+                            >
+                              <option value="FR">Tính năng phần mềm</option>
+                              <option value="NFR">Yêu cầu chất lượng / tốc độ</option>
+                            </select>
+
+                            {(editTypeMap[req.req_id] ?? req.req_type) === 'NFR' && (
+                              <select
+                                className="select-field"
+                                style={{ width: 'auto', padding: '7px 12px', fontSize: '0.86rem' }}
+                                value={editCatMap[req.req_id] ?? (req.nfr_category || 'Performance')}
+                                onChange={(e) =>
+                                  setEditCatMap((prev) => ({ ...prev, [req.req_id]: e.target.value }))
+                                }
+                              >
+                                {ISO_KEYS.map((k) => (
+                                  <option key={k} value={k}>
+                                    {ISO_VI_MAP[k]}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                          </div>
+
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <button
+                              type="button"
+                              className="btn btn-outline"
+                              style={{ padding: '7px 14px', fontSize: '0.85rem' }}
+                              onClick={() => setEditingReqId(null)}
+                            >
+                              Hủy
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-primary"
+                              style={{ padding: '7px 16px', fontSize: '0.85rem' }}
+                              disabled={isUpdatingReq}
+                              onClick={() => handleSaveCustomEdit(req)}
+                            >
+                              Lưu thay đổi
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                )}
+                );
+              })}
+
+              {filteredRequirements.length === 0 && (
+                <div className="card" style={{ textAlign: 'center', color: '#64748B' }}>
+                  Không có câu yêu cầu nào trong mục này.
+                </div>
+              )}
+            </div>
+
+            {/* BOTTOM STEP NAVIGATION */}
+            <div className="step-footer">
+              <button type="button" className="btn btn-outline" onClick={() => setStep(1)}>
+                ← Quay lại Bước 1 (Đổi tài liệu khác)
+              </button>
+              <button type="button" className="btn btn-primary" onClick={() => setStep(3)}>
+                <span>Tiếp tục sang Bước 3: Tải Báo cáo Word &amp; Sơ đồ</span>
+                <Icon name="arrow-right" size={18} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ==================================================================
+            BƯỚC 3: NHẬN BÁO CÁO WORD (.DOCX), SƠ ĐỒ & KỊCH BẢN NGƯỜI DÙNG
+            ================================================================== */}
+        {step === 3 && result && (
+          <div>
+            {/* TOP DELIVERABLE DOWNLOAD CARDS */}
+            <div className="deliverable-grid">
+              <div className="deliverable-card primary-highlight">
+                <div>
+                  <span className="badge badge-ok" style={{ marginBottom: '10px' }}>
+                    ✓ Đã tạo xong báo cáo hoàn chỉnh
+                  </span>
+                  <h2 style={{ fontSize: '1.22rem', fontWeight: 700, marginBottom: '6px' }}>
+                    1. File Báo cáo Đặc tả Phần mềm (.docx)
+                  </h2>
+                  <p style={{ fontSize: '0.88rem', color: '#475569' }}>
+                    Tài liệu Microsoft Word đã được trình bày sẵn thành 6 phần đầy đủ: Giới thiệu dự án,
+                    Danh sách người dùng, Các tính năng, Tiêu chuẩn chất lượng, Kịch bản và Bảng tổng hợp.
+                  </p>
+                </div>
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                  <a href="/api/export/srs-docx" className="btn btn-primary">
+                    <Icon name="download" size={18} />
+                    <span>Tải về File Word (.docx)</span>
+                  </a>
+                  <a href="/api/export/srs-md" className="btn btn-outline">
+                    <span>Tải bản Văn bản (.md)</span>
+                  </a>
+                </div>
+              </div>
+
+              <div className="deliverable-card">
+                <div>
+                  <span className="badge badge-nfr" style={{ marginBottom: '10px' }}>
+                    Hình vẽ minh họa hệ thống
+                  </span>
+                  <h2 style={{ fontSize: '1.22rem', fontWeight: 700, marginBottom: '6px' }}>
+                    2. Sơ đồ Chức năng Tổng quan (Use Case)
+                  </h2>
+                  <p style={{ fontSize: '0.88rem', color: '#475569' }}>
+                    Hình ảnh sơ đồ trực quan giúp bất kỳ ai nhìn vào cũng biết hệ thống có những nhóm người dùng nào
+                    và họ sử dụng các chức năng gì.
+                  </p>
+                </div>
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                  {result.has_diagram_image && (
+                    <a
+                      href="/api/export/diagram-png"
+                      download={`${result.project.project_name}_usecase.png`}
+                      className="btn btn-primary"
+                    >
+                      <Icon name="download" size={18} />
+                      <span>Tải Hình ảnh Sơ đồ (.png)</span>
+                    </a>
+                  )}
+                  <a
+                    href="/api/export/diagram-puml"
+                    download={`${result.project.project_name}_usecase.puml`}
+                    className="btn btn-outline"
+                  >
+                    <span>Tải file vẽ kỹ thuật (.puml)</span>
+                  </a>
+                </div>
               </div>
             </div>
-          )}
 
-          {/* ================================================================
-              SCREEN 3: USER STORIES & TEST SCENARIOS (MASTER-DETAIL)
-              ================================================================ */}
-          {activeView === 'stories' && result && (
-            <div className="master-detail-grid">
-              {/* LEFT PANE: USER STORIES LIST */}
-              <div className="master-list" ref={storyListRef}>
-                {result.user_stories.map((us) => (
-                  <div
-                    key={us.story_id}
-                    className={`list-item-card js-stagger-item ${
-                      selectedStory?.story_id === us.story_id ? 'selected' : ''
-                    }`}
-                    onClick={() => setSelectedStoryId(us.story_id)}
-                  >
-                    <div className="list-item-top">
-                      <div className="list-item-badges">
-                        <span className="badge badge-id">{us.story_id}</span>
-                        <span className="badge badge-fr">Từ: {us.req_id}</span>
-                        <span className="badge badge-neutral">Người dùng: {us.role}</span>
+            {/* 4 CLEAN SUB-TABS TO INSPECT DETAILS ON SCREEN */}
+            <div className="sub-tabs-bar">
+              <button
+                type="button"
+                className={`sub-tab-btn ${step3Tab === 'report' ? 'active' : ''}`}
+                onClick={() => setStep3Tab('report')}
+              >
+                Xem Sơ đồ &amp; Nội dung Báo cáo
+              </button>
+              <button
+                type="button"
+                className={`sub-tab-btn ${step3Tab === 'stories' ? 'active' : ''}`}
+                onClick={() => setStep3Tab('stories')}
+              >
+                Kịch bản Người dùng ({result.user_stories.length})
+              </button>
+              <button
+                type="button"
+                className={`sub-tab-btn ${step3Tab === 'table' ? 'active' : ''}`}
+                onClick={() => setStep3Tab('table')}
+              >
+                Bảng Tổng hợp Yêu cầu ({totalReqs})
+              </button>
+              <button
+                type="button"
+                className={`sub-tab-btn ${step3Tab === 'sync' ? 'active' : ''}`}
+                onClick={() => setStep3Tab('sync')}
+              >
+                Xuất sang Jira / GitHub / Trello
+              </button>
+            </div>
+
+            {/* SUB-TAB 1: VISUAL DIAGRAM & REPORT PREVIEW */}
+            {step3Tab === 'report' && (
+              <div ref={listContainerRef}>
+                {result.has_diagram_image && (
+                  <div className="card" style={{ marginBottom: '20px', textAlign: 'center' }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        marginBottom: '14px',
+                      }}
+                    >
+                      <h3 style={{ fontSize: '1.05rem', fontWeight: 700 }}>
+                        Hình ảnh Sơ đồ Chức năng Tổng quan
+                      </h3>
+                      <button
+                        type="button"
+                        className="btn btn-outline"
+                        style={{ padding: '5px 12px', fontSize: '0.8rem' }}
+                        onClick={() => setShowPlantUmlCode(!showPlantUmlCode)}
+                      >
+                        {showPlantUmlCode ? 'Ẩn mã vẽ kỹ thuật' : 'Xem mã vẽ kỹ thuật (PlantUML)'}
+                      </button>
+                    </div>
+                    <div
+                      style={{
+                        background: '#F8FAFC',
+                        border: '1px solid #E2E8F0',
+                        borderRadius: '10px',
+                        padding: '18px',
+                      }}
+                    >
+                      <img
+                        src={`/api/export/diagram-png?t=${Date.now()}`}
+                        alt="Sơ đồ chức năng tổng quan"
+                        style={{ maxWidth: '100%', height: 'auto', borderRadius: '6px' }}
+                      />
+                    </div>
+                    {showPlantUmlCode && (
+                      <pre
+                        style={{
+                          marginTop: '14px',
+                          textAlign: 'left',
+                          background: '#0F172A',
+                          color: '#E2E8F0',
+                          padding: '14px',
+                          borderRadius: '8px',
+                          fontSize: '0.8rem',
+                          overflowX: 'auto',
+                        }}
+                      >
+                        {result.plantuml_code}
+                      </pre>
+                    )}
+                  </div>
+                )}
+
+                <div className="card">
+                  <h3 style={{ fontSize: '1.05rem', fontWeight: 700, marginBottom: '12px' }}>
+                    Xem trước Nội dung Báo cáo Đặc tả Phần mềm
+                  </h3>
+                  <div className="doc-preview-box">{result.srs_markdown}</div>
+                </div>
+              </div>
+            )}
+
+            {/* SUB-TAB 2: USER STORIES IN PLAIN VIETNAMESE */}
+            {step3Tab === 'stories' && (
+              <div ref={listContainerRef}>
+                {result.user_stories.map((us, idx) => (
+                  <div key={us.story_id} className="story-simple-card js-stagger-item">
+                    <div className="req-card-top">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <span className="badge badge-num">Kịch bản #{idx + 1} ({us.story_id})</span>
+                        <span className="badge badge-fr">Tên chức năng: {us.puml_usecase_name}</span>
+                        <span className="badge badge-nfr">Từ yêu cầu: {us.req_id}</span>
                       </div>
-                      <span className="badge badge-ok">
-                        {us.acceptance_criteria.length} kịch bản kiểm thử
-                      </span>
                     </div>
-                    <div className="list-item-text" style={{ fontWeight: 600 }}>
-                      {us.puml_usecase_name}
+
+                    <div className="story-rgb-row">
+                      <div className="story-rgb-box">
+                        <div className="story-rgb-label">1. Ai là người sử dụng?</div>
+                        <div className="story-rgb-val">{us.role}</div>
+                      </div>
+                      <div className="story-rgb-box">
+                        <div className="story-rgb-label">2. Họ muốn làm việc gì?</div>
+                        <div className="story-rgb-val">{us.goal}</div>
+                      </div>
+                      <div className="story-rgb-box">
+                        <div className="story-rgb-label">3. Để mang lại lợi ích gì?</div>
+                        <div className="story-rgb-val">{us.benefit}</div>
+                      </div>
                     </div>
-                    <div style={{ fontSize: '0.84rem', color: '#475569', marginTop: '3px' }}>
-                      Là một <strong>{us.role}</strong>, tôi muốn {us.goal}
+
+                    <div style={{ fontSize: '0.86rem', fontWeight: 700, color: '#334155', marginTop: '10px' }}>
+                      Các tình huống kiểm tra để nghiệm thu tính năng này:
                     </div>
+                    {us.acceptance_criteria.map((ac, acIdx) => (
+                      <div key={acIdx} className="test-check-box">
+                        <div style={{ fontWeight: 700, color: '#1D4ED8', marginBottom: '6px' }}>
+                          Tình huống {acIdx + 1}: {ac.scenario}
+                        </div>
+                        <div>
+                          <strong>• Điều kiện ban đầu:</strong> {ac.given}
+                        </div>
+                        <div>
+                          <strong>• Khi người dùng thao tác:</strong> {ac.when}
+                        </div>
+                        <div>
+                          <strong>• Kết quả phần mềm phải đạt:</strong> {ac.then}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 ))}
               </div>
+            )}
 
-              {/* RIGHT PANE: SELECTED STORY & GHERKIN TEST SCENARIOS */}
-              {selectedStory && (
-                <div className="detail-inspector" ref={storyInspectorRef}>
-                  <div className="panel-header">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                      <span className="badge badge-id" style={{ fontSize: '0.85rem', padding: '4px 10px' }}>
-                        {selectedStory.story_id}
-                      </span>
-                      <span className="badge badge-fr">Truy vết từ: {selectedStory.req_id}</span>
-                      <span className="badge badge-neutral">
-                        Chức năng: {selectedStory.puml_usecase_name}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="story-3grid">
-                    <div className="story-cell">
-                      <div className="story-cell-label">1. Ai là người sử dụng?</div>
-                      <div className="story-cell-val">{selectedStory.role}</div>
-                    </div>
-                    <div className="story-cell">
-                      <div className="story-cell-label">2. Họ muốn làm việc gì?</div>
-                      <div className="story-cell-val">{selectedStory.goal}</div>
-                    </div>
-                    <div className="story-cell">
-                      <div className="story-cell-label">3. Để đạt lợi ích gì?</div>
-                      <div className="story-cell-val">{selectedStory.benefit}</div>
-                    </div>
-                  </div>
-
-                  <div className="form-label" style={{ marginBottom: '10px' }}>
-                    Các tình huống kiểm thử nghiệm thu (Làm sao biết tính năng đã chạy đúng?):
-                  </div>
-
-                  {selectedStory.acceptance_criteria.map((ac, idx) => (
-                    <div key={idx} className="scenario-card">
-                      <div className="scenario-title">
-                        Tình huống {idx + 1}: {ac.scenario}
-                      </div>
-                      <div className="step-row">
-                        <span className="step-tag given">• Bối cảnh đầu:</span>
-                        <span>{ac.given}</span>
-                      </div>
-                      <div className="step-row">
-                        <span className="step-tag when">• Khi thao tác:</span>
-                        <span>{ac.when}</span>
-                      </div>
-                      <div className="step-row">
-                        <span className="step-tag then">• Kết quả đạt:</span>
-                        <span>{ac.then}</span>
-                      </div>
-                    </div>
-                  ))}
+            {/* SUB-TAB 3: SUMMARY TABLE */}
+            {step3Tab === 'table' && (
+              <div className="card" ref={listContainerRef}>
+                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, marginBottom: '14px' }}>
+                  Bảng Tổng hợp Toàn bộ Yêu cầu &amp; Kịch bản
+                </h3>
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Mã</th>
+                        <th>Nội dung yêu cầu</th>
+                        <th>Nhóm yêu cầu</th>
+                        <th>Người sử dụng</th>
+                        <th>Tên chức năng</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {result.requirements.map((r) => {
+                        const us = result.user_stories.find((u) => u.req_id === r.req_id);
+                        return (
+                          <tr key={r.req_id}>
+                            <td>
+                              <strong>{r.req_id}</strong>
+                            </td>
+                            <td>{r.raw_text}</td>
+                            <td>
+                              <span className={`badge ${r.req_type === 'FR' ? 'badge-fr' : 'badge-nfr'}`}>
+                                {r.req_type === 'FR'
+                                  ? 'Tính năng'
+                                  : `Chất lượng (${ISO_VI_MAP[r.nfr_category] || r.nfr_category || 'NFR'})`}
+                              </span>
+                            </td>
+                            <td>{us ? us.role : '-'}</td>
+                            <td>{us ? us.puml_usecase_name : '-'}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
-              )}
-            </div>
-          )}
+              </div>
+            )}
 
-          {/* ================================================================
-              SCREEN 4: USE CASE DIAGRAM & SRS WORD EXPORT
-              ================================================================ */}
-          {activeView === 'srs' && result && (
-            <div className="master-detail-grid">
-              {/* LEFT: USE CASE DIAGRAM */}
-              <div className="panel-card">
-                <div className="panel-header">
-                  <div className="panel-title-group">
-                    <div className="panel-icon">
-                      <Icon name="share" size={18} />
-                    </div>
-                    <div>
-                      <div className="panel-title">Sơ đồ Chức năng Tổng quan (Use Case Diagram)</div>
-                      <div className="panel-subtitle">
-                        Minh họa các tác nhân và chức năng rút trích từ tài liệu của bạn
-                      </div>
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    {result.has_diagram_image && (
-                      <a
-                        href="/api/export/diagram-png"
-                        download={`${result.project.project_name}_usecase.png`}
-                        className="btn btn-primary"
-                        style={{ padding: '6px 12px', fontSize: '0.8rem' }}
-                      >
-                        Tải Ảnh (.png)
-                      </a>
-                    )}
-                    <a
-                      href="/api/export/diagram-puml"
-                      download={`${result.project.project_name}_usecase.puml`}
-                      className="btn btn-outline"
-                      style={{ padding: '6px 12px', fontSize: '0.8rem' }}
-                    >
-                      Tải Mã (.puml)
-                    </a>
-                  </div>
+            {/* SUB-TAB 4: JIRA / GITHUB / TRELLO EXPORT */}
+            {step3Tab === 'sync' && (
+              <div className="card" ref={listContainerRef}>
+                <div style={{ marginBottom: '18px' }}>
+                  <h3 style={{ fontSize: '1.05rem', fontWeight: 700, marginBottom: '4px' }}>
+                    Xuất danh sách công việc sang Phần mềm Quản lý Dự án
+                  </h3>
+                  <p style={{ fontSize: '0.88rem', color: '#64748B' }}>
+                    Bạn có thể tải file về máy ngay (không cần tài khoản) hoặc điền thông tin kết nối để đẩy thẳng lên dự án.
+                  </p>
                 </div>
 
-                {result.has_diagram_image ? (
-                  <div style={{ textAlign: 'center', background: '#F8FAFC', padding: '16px', borderRadius: '8px', border: '1px solid #E2E8F0' }}>
-                    <img
-                      src={`/api/export/diagram-png?t=${Date.now()}`}
-                      alt="Use Case Diagram"
-                      style={{ maxWidth: '100%', height: 'auto', borderRadius: '6px' }}
-                    />
-                  </div>
-                ) : (
-                  <div style={{ color: '#64748B', fontSize: '0.88rem', marginBottom: '12px' }}>
-                    Mã nguồn vẽ sơ đồ PlantUML đã được khởi tạo bên dưới:
+                <div className="filter-tabs" style={{ marginBottom: '18px' }}>
+                  <button
+                    type="button"
+                    className={`filter-tab ${syncPlatform === 'jira' ? 'active' : ''}`}
+                    onClick={() => {
+                      setSyncPlatform('jira');
+                      setSyncStatus(null);
+                    }}
+                  >
+                    1. Phần mềm Jira
+                  </button>
+                  <button
+                    type="button"
+                    className={`filter-tab ${syncPlatform === 'github' ? 'active' : ''}`}
+                    onClick={() => {
+                      setSyncPlatform('github');
+                      setSyncStatus(null);
+                    }}
+                  >
+                    2. GitHub Issues
+                  </button>
+                  <button
+                    type="button"
+                    className={`filter-tab ${syncPlatform === 'trello' ? 'active' : ''}`}
+                    onClick={() => {
+                      setSyncPlatform('trello');
+                      setSyncStatus(null);
+                    }}
+                  >
+                    3. Bảng Trello
+                  </button>
+                </div>
+
+                {syncStatus && (
+                  <div
+                    style={{
+                      padding: '12px 16px',
+                      borderRadius: '8px',
+                      marginBottom: '16px',
+                      fontSize: '0.88rem',
+                      fontWeight: 600,
+                      background: syncStatus.isError ? '#FEF2F2' : '#F0FDF4',
+                      border: `1px solid ${syncStatus.isError ? '#FCA5A5' : '#86EFAC'}`,
+                      color: syncStatus.isError ? '#B91C1C' : '#166534',
+                    }}
+                  >
+                    {syncStatus.msg}
                   </div>
                 )}
 
-                <div style={{ marginTop: '14px' }}>
-                  <div className="form-label">Mã nguồn kỹ thuật PlantUML:</div>
-                  <pre
-                    style={{
-                      background: '#0F172A',
-                      color: '#E2E8F0',
-                      padding: '12px',
-                      borderRadius: '8px',
-                      fontSize: '0.78rem',
-                      fontFamily: 'var(--font-mono)',
-                      overflowX: 'auto',
-                      maxHeight: '220px',
-                    }}
-                  >
-                    {result.plantuml_code}
-                  </pre>
-                </div>
-              </div>
-
-              {/* RIGHT: SRS DOCUMENT EXPORT & PREVIEW */}
-              <div className="panel-card">
-                <div className="panel-header">
-                  <div className="panel-title-group">
-                    <div className="panel-icon">
-                      <Icon name="file" size={18} />
+                {syncPlatform === 'jira' && (
+                  <div>
+                    <div style={{ marginBottom: '16px' }}>
+                      <a href="/api/export/jira-csv" className="btn btn-primary">
+                        <Icon name="download" size={17} />
+                        <span>Tải File Bảng tính Jira (.csv) về máy ngay</span>
+                      </a>
                     </div>
-                    <div>
-                      <div className="panel-title">Báo cáo Đặc tả Phần mềm (SRS - 6 Chương)</div>
-                      <div className="panel-subtitle">
-                        Đóng gói chuẩn IEEE 830 / ISO 29148 sẵn sàng tải về nộp hoặc gửi khách hàng
+                    <div style={{ borderTop: '1px solid #E2E8F0', paddingTop: '16px', maxWidth: '520px' }}>
+                      <div style={{ fontWeight: 700, fontSize: '0.92rem', marginBottom: '12px' }}>
+                        Hoặc đẩy trực tiếp lên Jira Cloud:
                       </div>
+                      <div style={{ marginBottom: '10px' }}>
+                        <label className="field-label">Địa chỉ Jira Domain</label>
+                        <input
+                          type="text"
+                          className="input-field"
+                          placeholder="ten-cong-ty.atlassian.net"
+                          value={jiraForm.domain}
+                          onChange={(e) => setJiraForm({ ...jiraForm, domain: e.target.value })}
+                        />
+                      </div>
+                      <div style={{ marginBottom: '10px' }}>
+                        <label className="field-label">Email đăng nhập Jira</label>
+                        <input
+                          type="email"
+                          className="input-field"
+                          placeholder="email@company.com"
+                          value={jiraForm.email}
+                          onChange={(e) => setJiraForm({ ...jiraForm, email: e.target.value })}
+                        />
+                      </div>
+                      <div style={{ marginBottom: '10px' }}>
+                        <label className="field-label">Mã Jira API Token</label>
+                        <input
+                          type="password"
+                          className="input-field"
+                          value={jiraForm.token}
+                          onChange={(e) => setJiraForm({ ...jiraForm, token: e.target.value })}
+                        />
+                      </div>
+                      <div style={{ marginBottom: '14px' }}>
+                        <label className="field-label">Mã Dự án (Project Key)</label>
+                        <input
+                          type="text"
+                          className="input-field"
+                          value={jiraForm.project_key}
+                          onChange={(e) => setJiraForm({ ...jiraForm, project_key: e.target.value })}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-outline"
+                        onClick={() => handleSyncApi('jira')}
+                      >
+                        Đẩy trực tiếp lên Jira Cloud
+                      </button>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <a
-                      href="/api/export/srs-docx"
-                      className="btn btn-primary"
-                      style={{ padding: '6px 12px', fontSize: '0.8rem' }}
-                    >
-                      Tải File Word (.docx)
-                    </a>
-                    <a
-                      href="/api/export/srs-md"
-                      className="btn btn-outline"
-                      style={{ padding: '6px 12px', fontSize: '0.8rem' }}
-                    >
-                      Tải Markdown (.md)
-                    </a>
-                  </div>
-                </div>
+                )}
 
-                <div className="doc-preview-box">{result.srs_markdown}</div>
-              </div>
-            </div>
-          )}
-
-          {/* ================================================================
-              SCREEN 5: TRACEABILITY MATRIX & JIRA / GITHUB / TRELLO SYNC
-              ================================================================ */}
-          {activeView === 'sync' && result && (
-            <div>
-              <div className="toolbar-row">
-                <div className="filter-pills">
-                  {[
-                    { id: 'rtm', label: 'Bảng Ma trận Truy vết (RTM)' },
-                    { id: 'jira', label: '1. Đồng bộ Atlassian Jira' },
-                    { id: 'github', label: '2. Đồng bộ GitHub Issues' },
-                    { id: 'trello', label: '3. Đồng bộ Trello Kanban' },
-                  ].map((t) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      className={`pill-btn ${syncTab === t.id ? 'active' : ''}`}
-                      onClick={() => {
-                        setSyncTab(t.id);
-                        setSyncStatus(null);
-                      }}
-                    >
-                      {t.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {syncStatus && (
-                <div
-                  style={{
-                    padding: '12px 16px',
-                    borderRadius: '8px',
-                    marginBottom: '16px',
-                    fontSize: '0.88rem',
-                    fontWeight: 600,
-                    background: syncStatus.isError ? '#FEF2F2' : '#F0FDF4',
-                    border: `1px solid ${syncStatus.isError ? '#FCA5A5' : '#86EFAC'}`,
-                    color: syncStatus.isError ? '#B91C1C' : '#166534',
-                  }}
-                >
-                  {syncStatus.msg}
-                </div>
-              )}
-
-              {syncTab === 'rtm' && (
-                <div className="panel-card">
-                  <div className="panel-header">
-                    <div className="panel-title">
-                      Ma trận Truy vết Yêu cầu Thực tế (Requirements Traceability Matrix)
+                {syncPlatform === 'github' && (
+                  <div>
+                    <div style={{ marginBottom: '16px' }}>
+                      <a href="/api/export/github-json" className="btn btn-primary">
+                        <Icon name="download" size={17} />
+                        <span>Tải File GitHub Issues (.json) về máy ngay</span>
+                      </a>
                     </div>
-                    <span className="badge badge-ok">Đồng bộ 100% ({totalReqs} yêu cầu)</span>
+                    <div style={{ borderTop: '1px solid #E2E8F0', paddingTop: '16px', maxWidth: '520px' }}>
+                      <div style={{ fontWeight: 700, fontSize: '0.92rem', marginBottom: '12px' }}>
+                        Hoặc đẩy trực tiếp lên kho GitHub:
+                      </div>
+                      <div style={{ marginBottom: '10px' }}>
+                        <label className="field-label">Tên kho GitHub (owner/repo)</label>
+                        <input
+                          type="text"
+                          className="input-field"
+                          placeholder="username/ten-du-an"
+                          value={ghForm.repo}
+                          onChange={(e) => setGhForm({ ...ghForm, repo: e.target.value })}
+                        />
+                      </div>
+                      <div style={{ marginBottom: '14px' }}>
+                        <label className="field-label">Mã GitHub Token (PAT)</label>
+                        <input
+                          type="password"
+                          className="input-field"
+                          value={ghForm.token}
+                          onChange={(e) => setGhForm({ ...ghForm, token: e.target.value })}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-outline"
+                        onClick={() => handleSyncApi('github')}
+                      >
+                        Đẩy trực tiếp lên GitHub Issues
+                      </button>
+                    </div>
                   </div>
-                  <div style={{ overflowX: 'auto' }}>
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          <th>Mã Yêu cầu</th>
-                          <th>Phân loại</th>
-                          <th>Trạng thái</th>
-                          <th>Mã Kịch bản</th>
-                          <th>Người sử dụng</th>
-                          <th>Tên Chức năng (Use Case)</th>
-                          <th>Số kịch bản kiểm thử</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {result.requirements.map((r) => {
-                          const us = result.user_stories.find((u) => u.req_id === r.req_id);
-                          return (
-                            <tr key={r.req_id}>
-                              <td>
-                                <span className="badge badge-id">{r.req_id}</span>
-                              </td>
-                              <td>
-                                <span className={`badge ${r.req_type === 'FR' ? 'badge-fr' : 'badge-nfr'}`}>
-                                  {r.req_type === 'FR'
-                                    ? 'Tính năng (FR)'
-                                    : `Chất lượng (${ISO_VI_MAP[r.nfr_category] || r.nfr_category || 'NFR'})`}
-                                </span>
-                              </td>
-                              <td>
-                                <span className={`badge ${r.is_ambiguous ? 'badge-warn' : 'badge-ok'}`}>
-                                  {r.is_ambiguous ? 'Cần làm rõ' : 'Đã rõ ràng'}
-                                </span>
-                              </td>
-                              <td>
-                                <strong>{us ? us.story_id : '-'}</strong>
-                              </td>
-                              <td>{us ? us.role : '-'}</td>
-                              <td>{us ? us.puml_usecase_name : '-'}</td>
-                              <td>{us ? `${us.acceptance_criteria.length} kịch bản` : '-'}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
+                )}
 
-              {syncTab === 'jira' && (
-                <div className="panel-card" style={{ maxWidth: '680px' }}>
-                  <div className="panel-header">
-                    <div className="panel-title">Xuất &amp; Đồng bộ sang Atlassian Jira Cloud</div>
-                    <a href="/api/export/jira-csv" className="btn btn-outline">
-                      Tải File Jira Import (.csv)
-                    </a>
+                {syncPlatform === 'trello' && (
+                  <div>
+                    <div style={{ marginBottom: '16px' }}>
+                      <a href="/api/export/trello-json" className="btn btn-primary">
+                        <Icon name="download" size={17} />
+                        <span>Tải File Bảng Trello (.json) về máy ngay</span>
+                      </a>
+                    </div>
+                    <div style={{ borderTop: '1px solid #E2E8F0', paddingTop: '16px', maxWidth: '520px' }}>
+                      <div style={{ fontWeight: 700, fontSize: '0.92rem', marginBottom: '12px' }}>
+                        Hoặc tạo thẻ trực tiếp trên bảng Trello:
+                      </div>
+                      <div style={{ marginBottom: '10px' }}>
+                        <label className="field-label">Trello API Key</label>
+                        <input
+                          type="text"
+                          className="input-field"
+                          value={trelloForm.api_key}
+                          onChange={(e) => setTrelloForm({ ...trelloForm, api_key: e.target.value })}
+                        />
+                      </div>
+                      <div style={{ marginBottom: '10px' }}>
+                        <label className="field-label">Trello Token</label>
+                        <input
+                          type="password"
+                          className="input-field"
+                          value={trelloForm.token}
+                          onChange={(e) => setTrelloForm({ ...trelloForm, token: e.target.value })}
+                        />
+                      </div>
+                      <div style={{ marginBottom: '14px' }}>
+                        <label className="field-label">Mã cột Trello (List ID)</label>
+                        <input
+                          type="text"
+                          className="input-field"
+                          value={trelloForm.list_id}
+                          onChange={(e) => setTrelloForm({ ...trelloForm, list_id: e.target.value })}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-outline"
+                        onClick={() => handleSyncApi('trello')}
+                      >
+                        Đẩy trực tiếp lên Trello Board
+                      </button>
+                    </div>
                   </div>
-                  <div className="form-group">
-                    <label className="form-label">Jira Domain</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="ten-cong-ty.atlassian.net"
-                      value={jiraForm.domain}
-                      onChange={(e) => setJiraForm({ ...jiraForm, domain: e.target.value })}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Email tài khoản Atlassian</label>
-                    <input
-                      type="email"
-                      className="form-input"
-                      placeholder="email@company.com"
-                      value={jiraForm.email}
-                      onChange={(e) => setJiraForm({ ...jiraForm, email: e.target.value })}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Atlassian API Token</label>
-                    <input
-                      type="password"
-                      className="form-input"
-                      value={jiraForm.token}
-                      onChange={(e) => setJiraForm({ ...jiraForm, token: e.target.value })}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Mã Dự án (Project Key)</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={jiraForm.project_key}
-                      onChange={(e) => setJiraForm({ ...jiraForm, project_key: e.target.value })}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={() => handleSyncApi('jira')}
-                  >
-                    Đẩy trực tiếp lên Jira Cloud
-                  </button>
-                </div>
-              )}
+                )}
+              </div>
+            )}
 
-              {syncTab === 'github' && (
-                <div className="panel-card" style={{ maxWidth: '680px' }}>
-                  <div className="panel-header">
-                    <div className="panel-title">Xuất &amp; Đồng bộ sang GitHub Issues</div>
-                    <a href="/api/export/github-json" className="btn btn-outline">
-                      Tải File GitHub (.json)
-                    </a>
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Tên Repository (owner/repo)</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="username/repository-name"
-                      value={ghForm.repo}
-                      onChange={(e) => setGhForm({ ...ghForm, repo: e.target.value })}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">GitHub Personal Access Token (PAT)</label>
-                    <input
-                      type="password"
-                      className="form-input"
-                      value={ghForm.token}
-                      onChange={(e) => setGhForm({ ...ghForm, token: e.target.value })}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={() => handleSyncApi('github')}
-                  >
-                    Đẩy trực tiếp lên GitHub Issues
-                  </button>
-                </div>
-              )}
-
-              {syncTab === 'trello' && (
-                <div className="panel-card" style={{ maxWidth: '680px' }}>
-                  <div className="panel-header">
-                    <div className="panel-title">Xuất &amp; Đồng bộ sang Trello Kanban</div>
-                    <a href="/api/export/trello-json" className="btn btn-outline">
-                      Tải File Trello (.json)
-                    </a>
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Trello API Key</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={trelloForm.api_key}
-                      onChange={(e) => setTrelloForm({ ...trelloForm, api_key: e.target.value })}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Trello Token</label>
-                    <input
-                      type="password"
-                      className="form-input"
-                      value={trelloForm.token}
-                      onChange={(e) => setTrelloForm({ ...trelloForm, token: e.target.value })}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Mã cột Trello (List ID)</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={trelloForm.list_id}
-                      onChange={(e) => setTrelloForm({ ...trelloForm, list_id: e.target.value })}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={() => handleSyncApi('trello')}
-                  >
-                    Đẩy trực tiếp lên Trello Board
-                  </button>
-                </div>
-              )}
+            <div className="step-footer">
+              <button type="button" className="btn btn-outline" onClick={() => setStep(2)}>
+                ← Quay lại Bước 2 (Kiểm tra &amp; Sửa lại các câu yêu cầu)
+              </button>
+              <button type="button" className="btn btn-outline" onClick={() => setStep(1)}>
+                Phân tích một tài liệu mới khác
+              </button>
             </div>
-          )}
-        </main>
-      </div>
+          </div>
+        )}
+      </main>
 
       {/* ====================================================================
-          LIVE 60FPS JAVASCRIPT PIPELINE OVERLAY MODAL DURING ANALYSIS
+          OPTIONAL AI SETTINGS MODAL (HIDDEN UNLESS USER CLICKS "TÙY CHỌN AI")
           ==================================================================== */}
-      {isAnalyzing && (
-        <div className="pipeline-modal-backdrop">
-          <div className="pipeline-modal">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0F172A' }}>
-                  AI đang phân tích tài liệu thực tế của bạn...
-                </div>
-                <div style={{ fontSize: '0.84rem', color: '#64748B', marginTop: '2px' }}>
-                  Đang kết nối trực tiếp tới {provider.toUpperCase()} ({modelName})
-                </div>
-              </div>
-              <div
-                style={{
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: '1.25rem',
-                  fontWeight: 700,
-                  color: '#1D4ED8',
-                }}
-              >
-                {(elapsedMs / 1000).toFixed(2)}s
-              </div>
-            </div>
-
+      {showAiModal && (
+        <div className="modal-backdrop" onClick={() => setShowAiModal(false)}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
             <div
               style={{
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
-                gap: '12px',
-                marginTop: '12px',
-                padding: '10px 12px',
-                background: '#F8FAFC',
-                border: '1px solid #E2E8F0',
-                borderRadius: '8px',
+                marginBottom: '16px',
               }}
             >
-              <div style={{ fontSize: '0.83rem', color: '#475569' }}>
-                {jobMessage || 'Đang chờ máy chủ khởi động job phân tích...'}
+              <div>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 700 }}>
+                  Tùy chọn Chế độ Phân tích &amp; Kết nối AI
+                </h3>
+                <p style={{ fontSize: '0.82rem', color: '#64748B' }}>
+                  Mặc định hệ thống đã chạy tự động trên máy mà không cần bạn nhập khóa API
+                </p>
               </div>
               <button
                 type="button"
-                className="btn"
-                style={{ whiteSpace: 'nowrap', padding: '6px 12px', fontSize: '0.8rem' }}
-                onClick={handleCancelAnalysis}
+                className="btn btn-outline"
+                style={{ padding: '4px 10px', fontSize: '0.8rem' }}
+                onClick={() => setShowAiModal(false)}
               >
-                Hủy phân tích
+                Đóng
               </button>
+            </div>
+
+            <div style={{ marginBottom: '14px' }}>
+              <label className="field-label">Chế độ xử lý</label>
+              <select
+                className="select-field"
+                value={provider}
+                onChange={(e) => handleProviderChange(e.target.value)}
+              >
+                <option value="local_nlp">
+                  Chạy tự động trên máy (Mặc định - Không cần nhập API Key)
+                </option>
+                <option value="groq">Kết nối Groq Cloud AI (Cần nhập API Key)</option>
+                <option value="gemini">Kết nối Google Gemini AI (Cần nhập API Key)</option>
+                <option value="openrouter">Kết nối OpenRouter AI (Cần nhập API Key)</option>
+                <option value="ollama">Kết nối Ollama trên máy (Cổng 11434)</option>
+              </select>
+            </div>
+
+            {provider !== 'local_nlp' && provider !== 'ollama' && (
+              <div style={{ marginBottom: '14px' }}>
+                <label className="field-label">
+                  Nhập mã khóa API Key ({provider.toUpperCase()})
+                </label>
+                <input
+                  type="password"
+                  className="input-field"
+                  placeholder="Dán mã khóa API Key của bạn vào đây..."
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                />
+              </div>
+            )}
+
+            {provider !== 'local_nlp' && (
+              <div style={{ marginBottom: '14px' }}>
+                <label className="field-label">Tên mô hình AI</label>
+                <input
+                  type="text"
+                  className="input-field"
+                  value={modelName}
+                  onChange={(e) => setModelName(e.target.value)}
+                />
+              </div>
+            )}
+
+            <div style={{ textAlign: 'right', marginTop: '18px' }}>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => setShowAiModal(false)}
+              >
+                Lưu &amp; Quay lại
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ====================================================================
+          LIVE PROGRESS MODAL DURING ANALYSIS
+          ==================================================================== */}
+      {isAnalyzing && (
+        <div className="modal-backdrop">
+          <div className="modal-box">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0F172A' }}>
+                  Đang phân tích tài liệu của bạn...
+                </div>
+                <div style={{ fontSize: '0.85rem', color: '#64748B', marginTop: '2px' }}>
+                  {jobMessage || 'Vui lòng đợi trong giây lát'}
+                </div>
+              </div>
+              <div
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '1.2rem',
+                  fontWeight: 700,
+                  color: '#2563EB',
+                }}
+              >
+                {(elapsedMs / 1000).toFixed(1)}s
+              </div>
             </div>
 
             <div className="pipeline-step-list">
@@ -1762,6 +1723,18 @@ export default function App() {
                 );
               })}
             </div>
+
+            {currentJobIdRef.current && (
+              <div style={{ marginTop: '16px', textAlign: 'right' }}>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={handleCancelAnalysis}
+                >
+                  Hủy phân tích
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
