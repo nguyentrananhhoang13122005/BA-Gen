@@ -5,6 +5,7 @@ import {
   animateSuccessFlash,
   useAnimatedNumber,
 } from './animations.js';
+import UmlCanvasStudio from './UmlCanvasStudio.jsx';
 
 const ISO_VI_MAP = {
   Performance: 'Tốc độ & Hiệu năng',
@@ -1203,63 +1204,15 @@ export default function App() {
               </button>
             </div>
 
-            {/* SUB-TAB 1: VISUAL DIAGRAM & REPORT PREVIEW */}
+            {/* SUB-TAB 1: INTERACTIVE WEB UML STUDIO & REPORT PREVIEW */}
             {step3Tab === 'report' && (
               <div ref={listContainerRef}>
-                {result.has_diagram_image && (
-                  <div className="card" style={{ marginBottom: '20px', textAlign: 'center' }}>
-                    <div
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        marginBottom: '14px',
-                      }}
-                    >
-                      <h3 style={{ fontSize: '1.05rem', fontWeight: 700 }}>
-                        Hình ảnh Sơ đồ Chức năng Tổng quan
-                      </h3>
-                      <button
-                        type="button"
-                        className="btn btn-outline"
-                        style={{ padding: '5px 12px', fontSize: '0.8rem' }}
-                        onClick={() => setShowPlantUmlCode(!showPlantUmlCode)}
-                      >
-                        {showPlantUmlCode ? 'Ẩn mã vẽ kỹ thuật' : 'Xem mã vẽ kỹ thuật (PlantUML)'}
-                      </button>
-                    </div>
-                    <div
-                      style={{
-                        background: '#F8FAFC',
-                        border: '1px solid #E2E8F0',
-                        borderRadius: '10px',
-                        padding: '18px',
-                      }}
-                    >
-                      <img
-                        src={`/api/export/diagram-png?t=${Date.now()}`}
-                        alt="Sơ đồ chức năng tổng quan"
-                        style={{ maxWidth: '100%', height: 'auto', borderRadius: '6px' }}
-                      />
-                    </div>
-                    {showPlantUmlCode && (
-                      <pre
-                        style={{
-                          marginTop: '14px',
-                          textAlign: 'left',
-                          background: '#0F172A',
-                          color: '#E2E8F0',
-                          padding: '14px',
-                          borderRadius: '8px',
-                          fontSize: '0.8rem',
-                          overflowX: 'auto',
-                        }}
-                      >
-                        {result.plantuml_code}
-                      </pre>
-                    )}
-                  </div>
-                )}
+                <UmlCanvasStudio
+                  userStories={result.user_stories}
+                  projectName={result.project?.project_name || 'Hệ thống Phần mềm'}
+                  initialPlantUmlCode={result.plantuml_code}
+                  hasKrokiImage={result.has_diagram_image}
+                />
 
                 <div className="card">
                   <h3 style={{ fontSize: '1.05rem', fontWeight: 700, marginBottom: '12px' }}>

@@ -182,6 +182,10 @@ class TrelloSyncRequest(BaseModel):
     list_id: str
 
 
+class DiagramUpdateRequest(BaseModel):
+    plantuml_code: str
+
+
 def _serialize_current_result(facade: RequirementAnalysisFacade) -> dict:
     """Chuyển đổi trạng thái phân tích hiện tại sang JSON trả về cho React Frontend."""
     if not facade.current_project:
@@ -563,6 +567,26 @@ def export_diagram_puml(session: SessionState = Depends(require_session)):
             media_type="text/plain; charset=utf-8",
             headers={"Content-Disposition": 'attachment; filename="usecase_diagram.puml"'},
         )
+
+
+@app.post("/api/diagram/update")
+def update_diagram_code(
+    body: DiagramUpdateRequest,
+    session: SessionState = Depends(require_session),
+):
+    """Cập nhật mã PlantUML từ trình vẽ UML trực tiếp trên Web và kết xuất lại ảnh."""
+    code = body.plantuml_code.strip()
+    if not code:
+        raise HTTPException(status_code=400, detail="Mã PlantUML không được để trống.")
+    with session.lock:
+        session.facade.current_plantuml_code = code
+        img_bytes = session.facade.plantuml_exporter.render_image_via_kroki(code)
+        if img_bytes:
+            session.facade.current_plantuml_bytes = img_bytes
+        return {
+            "plantuml_code": session.facade.current_plantuml_code,
+            "has_diagram_image": bool(session.facade.current_plantuml_bytes),
+        }
 
 
 @app.get("/api/export/jira-csv")
