@@ -61,6 +61,7 @@ class RequirementAnalysisFacade:
         self.current_plantuml_code: str = ""
         self.current_plantuml_bytes: Optional[bytes] = None
         self.timings: dict = {}
+        self.warnings: List[str] = []
 
     def analyze_document(
         self,
@@ -82,6 +83,15 @@ class RequirementAnalysisFacade:
         raw_text = parser.parse(source)
         sentences, lang = RequirementSegmenter.segment(raw_text)
         timings["parsing_and_segmentation_sec"] = round(time.perf_counter() - t0, 3)
+
+        self.warnings = []
+        max_requirements = get_config().max_requirements
+        if len(sentences) > max_requirements:
+            self.warnings.append(
+                f"Tài liệu có {len(sentences)} câu yêu cầu; chỉ {max_requirements} câu đầu tiên "
+                "được phân tích để bảo vệ tài nguyên hệ thống."
+            )
+            sentences = sentences[:max_requirements]
 
         # Khởi tạo thông tin dự án
         p_name = project_name or (filename.rsplit(".", 1)[0] if "." in filename else "Dự án Mới")
@@ -152,7 +162,8 @@ class RequirementAnalysisFacade:
             user_stories=self.current_user_stories,
             plantuml_code=self.current_plantuml_code,
             plantuml_image_bytes=self.current_plantuml_bytes,
-            timings=self.timings
+            timings=self.timings,
+            warnings=self.warnings,
         )
 
     def apply_smart_rewrite(self, req_id: str, new_text: Optional[str] = None):

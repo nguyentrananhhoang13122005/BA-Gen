@@ -79,3 +79,4 @@ class AnalysisResultDTO(BaseModel):
     plantuml_code: str = ""
     plantuml_image_bytes: Optional[bytes] = None
     timings: dict = Field(default_factory=dict)
+    warnings: List[str] = Field(default_factory=list)

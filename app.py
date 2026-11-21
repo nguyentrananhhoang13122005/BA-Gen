@@ -112,8 +112,28 @@ def _serialize_current_result(facade: RequirementAnalysisFacade) -> dict:
         "plantuml_code": res.plantuml_code,
         "has_diagram_image": bool(res.plantuml_image_bytes),
         "timings": res.timings,
+        "warnings": res.warnings,
         "srs_markdown": facade.export_srs_markdown(),
     }
+
+
+async def _read_upload_limited(file: UploadFile, max_bytes: int) -> bytes:
+    """Đọc tệp theo từng khối 1 MB và dừng ngay khi vượt giới hạn."""
+    chunks = []
+    total = 0
+    limit_mb = max_bytes // (1024 * 1024)
+    while True:
+        chunk = await file.read(1024 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Tệp vượt quá giới hạn {limit_mb} MB. Vui lòng chia nhỏ tài liệu.",
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 @app.get("/api/config-defaults")
@@ -178,12 +198,21 @@ async def analyze_requirements(
         )
 
     if file is not None and file.filename:
-        content_bytes = await file.read()
+        content_bytes = await _read_upload_limited(file, config.max_file_size_bytes)
         source = content_bytes
         filename = file.filename
         size_bytes = len(content_bytes)
     elif raw_text.strip():
-        source = raw_text.strip()
+        stripped_text = raw_text.strip()
+        if len(stripped_text) > config.max_raw_text_chars:
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    f"Văn bản dán vào có {len(stripped_text):,} ký tự, vượt giới hạn "
+                    f"{config.max_raw_text_chars:,} ký tự."
+                ),
+            )
+        source = stripped_text
         filename = "van_ban_yeu_cau.txt"
         size_bytes = len(source.encode("utf-8"))
     else:

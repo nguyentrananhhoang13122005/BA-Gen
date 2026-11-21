@@ -10,8 +10,9 @@ import os
 import unicodedata
 from typing import Union
 
+from src.core.config import get_config
 
-MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024  # 25 MB
+
 DISALLOWED_EXTENSIONS = {".exe", ".bat", ".docm", ".sh", ".cmd", ".vbs", ".msi"}
 
 
@@ -96,10 +97,11 @@ class DocumentIngestionFactory:
 
     @staticmethod
     def create_parser(filename: str, file_size_bytes: int = 0) -> IDocumentParser:
-        if file_size_bytes > MAX_FILE_SIZE_BYTES:
+        max_bytes = get_config().max_file_size_bytes
+        if file_size_bytes > max_bytes:
             raise ValueError(
                 f"Tệp quá lớn ({file_size_bytes / (1024 * 1024):.1f} MB). "
-                f"Giới hạn dung lượng tối đa là 25 MB."
+                f"Giới hạn dung lượng tối đa là {max_bytes / (1024 * 1024):.0f} MB."
             )
 
         _, ext = os.path.splitext(filename.lower())

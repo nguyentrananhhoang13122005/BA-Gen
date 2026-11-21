@@ -3,12 +3,12 @@
 import io
 import docx
 import pytest
+from src.core.config import DEFAULT_MAX_FILE_SIZE_BYTES
 from src.parsers.factory import (
     DocumentIngestionFactory,
     DocxDocumentParser,
     RawTextParser,
     TxtDocumentParser,
-    MAX_FILE_SIZE_BYTES
 )
 
 
@@ -67,6 +67,6 @@ def test_factory_rejects_disallowed_extensions():
 
 
 def test_factory_rejects_oversized_files():
-    oversized = MAX_FILE_SIZE_BYTES + 1024
+    oversized = DEFAULT_MAX_FILE_SIZE_BYTES + 1024
     with pytest.raises(ValueError, match="Tệp quá lớn"):
         DocumentIngestionFactory.create_parser("huge.docx", file_size_bytes=oversized)
