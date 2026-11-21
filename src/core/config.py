@@ -44,6 +44,9 @@ DEFAULT_PROVIDER = "groq"
 DEFAULT_CONFIDENCE_THRESHOLD = 0.75
 DEFAULT_DATABASE_PATH = "reqassist.db"
 DEFAULT_SESSION_TTL_SECONDS = 24 * 60 * 60
+DEFAULT_MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024
+DEFAULT_MAX_RAW_TEXT_CHARS = 200_000
+DEFAULT_MAX_REQUIREMENTS = 500
 
 
 def _parse_confidence_threshold(raw_value: Optional[str], default: float) -> float:
@@ -107,6 +110,9 @@ class AppConfig:
     secret_key: Optional[str] = None
     session_ttl_seconds: int = DEFAULT_SESSION_TTL_SECONDS
     session_cookie_secure: bool = False
+    max_file_size_bytes: int = DEFAULT_MAX_FILE_SIZE_BYTES
+    max_raw_text_chars: int = DEFAULT_MAX_RAW_TEXT_CHARS
+    max_requirements: int = DEFAULT_MAX_REQUIREMENTS
 
     def model_for(self, provider: str) -> str:
         """Trả về model đã cấu hình cho provider, fallback về default của provider đó."""
@@ -140,6 +146,15 @@ class AppConfig:
                 env.get("SESSION_TTL_SECONDS"), DEFAULT_SESSION_TTL_SECONDS
             ),
             session_cookie_secure=_parse_bool(env.get("SESSION_COOKIE_SECURE")),
+            max_file_size_bytes=_parse_positive_int(
+                env.get("MAX_FILE_SIZE_BYTES"), DEFAULT_MAX_FILE_SIZE_BYTES
+            ),
+            max_raw_text_chars=_parse_positive_int(
+                env.get("MAX_RAW_TEXT_CHARS"), DEFAULT_MAX_RAW_TEXT_CHARS
+            ),
+            max_requirements=_parse_positive_int(
+                env.get("MAX_REQUIREMENTS"), DEFAULT_MAX_REQUIREMENTS
+            ),
         )
 
 

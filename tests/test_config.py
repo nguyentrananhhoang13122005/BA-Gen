@@ -3,6 +3,9 @@
 from src.core.config import (
     DEFAULT_CONFIDENCE_THRESHOLD,
     DEFAULT_DATABASE_PATH,
+    DEFAULT_MAX_FILE_SIZE_BYTES,
+    DEFAULT_MAX_RAW_TEXT_CHARS,
+    DEFAULT_MAX_REQUIREMENTS,
     AppConfig,
     get_config,
     reset_config,
@@ -58,6 +61,27 @@ def test_get_config_reads_environment_and_can_reset(monkeypatch):
         assert get_config().default_provider == "gemini"
     finally:
         reset_config()
+
+
+def test_config_reads_resource_limits():
+    config = AppConfig.from_env({
+        "MAX_FILE_SIZE_BYTES": "1048576",
+        "MAX_RAW_TEXT_CHARS": "5000",
+        "MAX_REQUIREMENTS": "20",
+    })
+
+    assert config.max_file_size_bytes == 1048576
+    assert config.max_raw_text_chars == 5000
+    assert config.max_requirements == 20
+
+    invalid = AppConfig.from_env({
+        "MAX_FILE_SIZE_BYTES": "abc",
+        "MAX_RAW_TEXT_CHARS": "-1",
+        "MAX_REQUIREMENTS": "0",
+    })
+    assert invalid.max_file_size_bytes == DEFAULT_MAX_FILE_SIZE_BYTES
+    assert invalid.max_raw_text_chars == DEFAULT_MAX_RAW_TEXT_CHARS
+    assert invalid.max_requirements == DEFAULT_MAX_REQUIREMENTS
 
 
 def test_database_manager_uses_configured_path(tmp_path, monkeypatch):
