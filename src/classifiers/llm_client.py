@@ -10,29 +10,7 @@ import socket
 from typing import Optional
 from openai import OpenAI
 
-
-PROVIDER_CONFIGS = {
-    "groq": {
-        "base_url": "https://api.groq.com/openai/v1",
-        "default_model": "llama-3.3-70b-versatile",
-        "env_key": "GROQ_API_KEY",
-    },
-    "openrouter": {
-        "base_url": "https://openrouter.ai/api/v1",
-        "default_model": "meta-llama/llama-3.3-70b-instruct:free",
-        "env_key": "OPENROUTER_API_KEY",
-    },
-    "gemini": {
-        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
-        "default_model": "gemini-1.5-flash",
-        "env_key": "GEMINI_API_KEY",
-    },
-    "ollama": {
-        "base_url": "http://localhost:11434/v1",
-        "default_model": "llama3",
-        "env_key": None,
-    },
-}
+from src.core.config import PROVIDER_CONFIGS, get_config
 
 INVALID_KEY_MARKERS = (
     "placeholder",
@@ -81,12 +59,13 @@ class MultiLLMClient:
 
     def __init__(
         self,
-        provider: str = "groq",
+        provider: Optional[str] = None,
         api_key: Optional[str] = None,
         model_name: Optional[str] = None,
         timeout: float = 25.0,
     ):
-        self.provider = provider.lower().strip()
+        app_config = get_config()
+        self.provider = (provider or app_config.default_provider).lower().strip()
         config = PROVIDER_CONFIGS.get(self.provider, PROVIDER_CONFIGS["groq"])
 
         if not api_key and config["env_key"]:
@@ -96,7 +75,7 @@ class MultiLLMClient:
 
         self.api_key = api_key.strip() if (api_key and is_real_api_key(api_key)) else ""
         self.base_url = config["base_url"]
-        self.model_name = model_name or config["default_model"]
+        self.model_name = model_name or app_config.model_for(self.provider)
         self.timeout = timeout
 
         self.client = OpenAI(

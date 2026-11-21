@@ -11,14 +11,15 @@ import hashlib
 import json
 import sqlite3
 from typing import List, Optional
+from src.core.config import get_config
 from src.core.models import ProjectDTO, RequirementDTO, UserStoryDTO
 
 
 class DatabaseManager:
     """Quản lý kết nối và các thao tác CRUD với SQLite database."""
 
-    def __init__(self, db_path: str = "reqassist.db"):
-        self.db_path = db_path
+    def __init__(self, db_path: Optional[str] = None):
+        self.db_path = db_path or get_config().database_path
         self._memory_conn: Optional[sqlite3.Connection] = None
         if self.db_path == ":memory:":
             self._memory_conn = sqlite3.connect(":memory:")

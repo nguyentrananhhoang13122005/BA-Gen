@@ -9,6 +9,7 @@ from typing import Callable, List, Optional, Union
 from src.analyzers.ambiguity_detector import AmbiguityDetector
 from src.classifiers.hybrid_classifier import HybridClassifierStrategy
 from src.classifiers.llm_client import MultiLLMClient
+from src.core.config import get_config
 from src.core.database import DatabaseManager
 from src.core.models import AnalysisResultDTO, ProjectDTO, RequirementDTO, UserStoryDTO
 from src.exporters.plantuml_exporter import PlantUMLExporter
@@ -25,17 +26,18 @@ class RequirementAnalysisFacade:
         self,
         llm_client: Optional[MultiLLMClient] = None,
         db_manager: Optional[DatabaseManager] = None,
-        confidence_threshold: float = 0.75,
+        confidence_threshold: Optional[float] = None,
         force_llm_mode: bool = False,
         strict_llm: bool = False,
     ):
         self.llm_client = llm_client or MultiLLMClient()
         self.db = db_manager or DatabaseManager()
         self.strict_llm = strict_llm
+        threshold = get_config().confidence_threshold if confidence_threshold is None else confidence_threshold
         self.classifier = HybridClassifierStrategy(
             llm_client=self.llm_client,
             db_manager=self.db,
-            confidence_threshold=confidence_threshold,
+            confidence_threshold=threshold,
             force_llm_mode=force_llm_mode,
             strict_llm=strict_llm,
         )
