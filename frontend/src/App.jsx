@@ -155,6 +155,12 @@ export default function App() {
   const [confidenceThreshold, setConfidenceThreshold] = useState(0.75);
   const [envDefaults, setEnvDefaults] = useState({});
 
+  // Authentication gate (only active when the server sets APP_PASSWORD)
+  const [authStatus, setAuthStatus] = useState({ loading: true, required: false, authenticated: false });
+  const [password, setPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
   // Document Input state (Real user data only)
   const [projectName, setProjectName] = useState('');
   const [rawText, setRawText] = useState('');
@@ -194,7 +200,7 @@ export default function App() {
   const storyInspectorRef = useRef(null);
   const fileInputRef = useRef(null);
 
-  useEffect(() => {
+  const loadConfigDefaults = () => {
     fetch('/api/config-defaults')
       .then((r) => r.json())
       .then((d) => {
@@ -216,7 +222,57 @@ export default function App() {
         }
       })
       .catch(() => {});
+  };
+
+  useEffect(() => {
+    fetch('/api/auth/status')
+      .then((r) => r.json())
+      .then((d) => {
+        const authenticated = !d.auth_required || Boolean(d.authenticated);
+        setAuthStatus({ loading: false, required: Boolean(d.auth_required), authenticated });
+        if (authenticated) loadConfigDefaults();
+      })
+      .catch(() => {
+        // Auth status endpoint unavailable: keep the local-mode experience
+        setAuthStatus({ loading: false, required: false, authenticated: true });
+        loadConfigDefaults();
+      });
   }, []);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setIsLoggingIn(true);
+    setLoginError('');
+    try {
+      const resp = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        throw new Error(data.detail || 'Đăng nhập thất bại.');
+      }
+      setAuthStatus({ loading: false, required: true, authenticated: true });
+      setPassword('');
+      loadConfigDefaults();
+    } catch (err) {
+      setLoginError(err.message);
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch {
+      // Ignore network errors; the local UI still locks below
+    }
+    setResult(null);
+    setSelectedFile(null);
+    setAuthStatus((prev) => ({ ...prev, authenticated: false, required: true }));
+  };
 
   // Update default model when provider changes
   const handleProviderChange = (newProv) => {
@@ -511,6 +567,51 @@ export default function App() {
     },
   };
 
+  if (authStatus.loading) {
+    return (
+      <div className="auth-screen">
+        <div className="auth-card">
+          <div className="brand-title">BA-Gen Studio</div>
+          <p className="auth-hint">Đang kiểm tra phiên đăng nhập...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (authStatus.required && !authStatus.authenticated) {
+    return (
+      <div className="auth-screen">
+        <form className="auth-card" onSubmit={handleLogin}>
+          <div className="brand-box" style={{ marginBottom: '18px' }}>
+            <div className="brand-logo">
+              <Icon name="key" size={20} />
+            </div>
+            <div>
+              <div className="brand-title">BA-Gen Studio</div>
+              <div className="brand-sub">Máy chủ yêu cầu đăng nhập</div>
+            </div>
+          </div>
+          <label className="form-label" htmlFor="app-password">
+            Mật khẩu truy cập
+          </label>
+          <input
+            id="app-password"
+            className="form-input"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
+            autoFocus
+          />
+          {loginError && <div className="auth-error">{loginError}</div>}
+          <button type="submit" className="btn btn-primary" style={{ marginTop: '14px' }} disabled={isLoggingIn}>
+            {isLoggingIn ? 'Đang đăng nhập...' : 'Đăng nhập'}
+          </button>
+        </form>
+      </div>
+    );
+  }
+
   return (
     <div className="app-shell">
       {/* ====================================================================
@@ -609,6 +710,14 @@ export default function App() {
                 : 'Chọn mục "Tài liệu & Kết nối AI" để thiết lập'}
             </div>
           </div>
+          {authStatus.required && (
+            <button type="button" className="nav-btn" onClick={handleLogout} style={{ marginTop: '10px' }}>
+              <span className="nav-btn-left">
+                <Icon name="key" size={17} />
+                <span>Đăng xuất</span>
+              </span>
+            </button>
+          )}
         </div>
       </aside>
 
