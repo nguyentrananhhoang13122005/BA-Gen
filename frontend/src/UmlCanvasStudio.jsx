@@ -61,11 +61,55 @@ function computePerimeterPoints(srcNode, dstNode) {
 
 function cleanSystemTitle(rawTitle) {
   if (!rawTitle) return 'Hệ thống Phần mềm';
-  return rawTitle
-    .replace(/\.docx$|\.txt$/i, '')
+  let cleaned = rawTitle
+    .replace(/\.(docx|txt|md|pdf)$/i, '')
     .replace(/^Topic\s+\d+\s*[—\-:]\s*/i, '')
     .replace(/_/g, ' ')
     .trim();
+
+  // Loại bỏ tiền tố tên file/tài liệu như "Tài liệu BA", "Tai lieu BA", "BRD", "SRS"
+  cleaned = cleaned
+    .replace(/^(Tài\s+liệu\s+BA|Tai\s+lieu\s+BA|Tài\s+liệu\s+SRS|BRD|SRS)\s*[—\-:]?\s*/i, '')
+    .trim();
+
+  if (/^Quan\s+ly\s+Nhan\s+vien$/i.test(cleaned)) {
+    return 'Hệ thống Quản lý Nhân sự (HRM)';
+  }
+  if (cleaned && !/^(Hệ\s+thống|System|Phần\s+mềm)\b/i.test(cleaned)) {
+    if (/^(Quản\s+lý|Quan\s+ly)\b/i.test(cleaned)) {
+      cleaned = `Hệ thống ${cleaned}`;
+    }
+  }
+  return cleaned || 'Hệ thống Phần mềm';
+}
+
+function stripUseCasePrefixAndActor(rawName) {
+  let cleaned = (rawName || '').trim();
+  // Loại bỏ tiền tố FR-01:, UC-01:, REQ-01:, BR-01:
+  cleaned = cleaned.replace(/^(?:FR|UC|REQ|NFR|BR|US)\s*[-_]?\s*\d+\s*[—\-:.)]*\s*/i, '').trim();
+  // Loại bỏ tên Actor ở đầu tên Use Case
+  cleaned = cleaned
+    .replace(
+      /^(?:Quản\s+trị\s+viên(?:\s+hệ\s+thống)?|Chuyên\s+viên\s+Nhân\s+sự(?:\s*\(HR\))?|Quản\s+lý\s+trực\s+tiếp|Nhân\s+viên|Kế\s+toán|Thủ\s+kho|Khách\s+hàng|HR)\s*[—\-:]\s*/i,
+      ''
+    )
+    .trim();
+  if (!cleaned) return (rawName || '').trim();
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
+
+function isSecondaryActorRole(roleName) {
+  const low = (roleName || '').toLowerCase();
+  return (
+    low.includes('quản trị') ||
+    low.includes('admin') ||
+    low.includes('quản lý trực tiếp') ||
+    low.includes('line manager') ||
+    low.includes('phê duyệt') ||
+    low.includes('hệ thống') ||
+    low.includes('tích hợp') ||
+    low.includes('kế toán')
+  );
 }
 
 /**
@@ -94,14 +138,18 @@ function filterFunctionalStories(userStories = [], requirements = [], actorFilte
     frStories = userStories;
   }
 
-  // 2. Khử trùng lặp tên Use Case
+  // 2. Khử trùng lặp tên Use Case (sau khi đã chuẩn hóa bỏ mã FR-xx/UC-xx)
   const seenNames = new Set();
   const deduped = [];
   frStories.forEach((us) => {
-    const key = (us.puml_usecase_name || us.goal || '').trim().toLowerCase();
+    const cleanName = stripUseCasePrefixAndActor(us.puml_usecase_name || us.goal || '');
+    const key = cleanName.toLowerCase();
     if (!seenNames.has(key)) {
       seenNames.add(key);
-      deduped.push(us);
+      deduped.push({
+        ...us,
+        puml_usecase_name: cleanName,
+      });
     }
   });
 
@@ -118,26 +166,44 @@ function filterFunctionalStories(userStories = [], requirements = [], actorFilte
 
 /**
  * Xây dựng bố cục UML 2.5 Hai Bên (Dual-Side StarUML Layout):
- * - Actor bên Trái nối vào cột Use Case bên Trái
- * - Actor bên Phải nối vào cột Use Case bên Phải
+ * - Primary Actors ở bên Trái nối vào cột Use Case bên Trái
+ * - Secondary Actors / Quản trị / Phê duyệt ở bên Phải nối vào cột Use Case bên Phải
+ * - Hỗ trợ phân tách Use Case con (<<include>> / <<extend>>) ở cột giữa mà KHÔNG nối trực tiếp với Actor
  * -> KHÔNG BAO GIỜ CÓ ĐƯỜNG NỐI CẮT ĐÈ LÊN HÌNH ELIP!
  */
-function buildDualSideGraph(filteredStories = [], projectName = 'Hệ thống Phần mềm') {
+function buildDualSideGraph(
+  filteredStories = [],
+  projectName = 'Hệ thống Phần mềm',
+  showSubUseCases = false
+) {
   const actorNames = Array.from(
     new Set(filteredStories.map((u) => (u.role || 'Người dùng').trim()))
   );
 
-  // Chia Actor sang 2 bên Trái (x = 88) và Phải (x = 932) của khung hệ thống (x = 210..810)
+  // Phân loại Primary Actors (bên Trái) và Secondary Actors (bên Phải)
   const leftActorSet = new Set();
   const rightActorSet = new Set();
 
-  actorNames.forEach((name, idx) => {
-    if (actorNames.length === 1 || idx % 2 === 0) {
-      leftActorSet.add(name);
-    } else {
-      rightActorSet.add(name);
+  if (actorNames.length === 1) {
+    leftActorSet.add(actorNames[0]);
+  } else {
+    actorNames.forEach((name) => {
+      if (isSecondaryActorRole(name)) {
+        rightActorSet.add(name);
+      } else {
+        leftActorSet.add(name);
+      }
+    });
+    // Nếu tất cả rơi vào 1 bên, chia đều 2 bên để không bị chồng đường nối
+    if (leftActorSet.size === 0 || rightActorSet.size === 0) {
+      leftActorSet.clear();
+      rightActorSet.clear();
+      actorNames.forEach((name, idx) => {
+        if (idx % 2 === 0) leftActorSet.add(name);
+        else rightActorSet.add(name);
+      });
     }
-  });
+  }
 
   const actorMap = new Map();
   actorNames.forEach((name, idx) => {
@@ -155,12 +221,15 @@ function buildDualSideGraph(filteredStories = [], projectName = 'Hệ thống Ph
   const links = [];
   const leftUcs = [];
   const rightUcs = [];
+  const centerSubUcs = [];
 
   filteredStories.forEach((us, idx) => {
     const roleName = (us.role || 'Người dùng').trim();
     const actor = actorMap.get(roleName);
     const ucId = `uc_${idx + 1}`;
-    const ucName = (us.puml_usecase_name || us.goal || `Chức năng ${idx + 1}`).trim();
+    const ucName = stripUseCasePrefixAndActor(
+      us.puml_usecase_name || us.goal || `Chức năng ${idx + 1}`
+    );
 
     const ucNode = {
       id: ucId,
@@ -168,6 +237,8 @@ function buildDualSideGraph(filteredStories = [], projectName = 'Hệ thống Ph
       name: ucName,
       actorName: roleName,
       side: actor?.side || 'left',
+      isSubUseCase: false,
+      subUseCases: Array.isArray(us.sub_usecases) ? us.sub_usecases : [],
       x: 0,
       y: 0,
     };
@@ -197,29 +268,71 @@ function buildDualSideGraph(filteredStories = [], projectName = 'Hệ thống Ph
     (a, b) => rightActorOrder.indexOf(a.actorName) - rightActorOrder.indexOf(b.actorName)
   );
 
-  // Nếu chỉ có 1 bên có Actor (ví dụ lọc theo 1 Actor), xếp 1 cột chính giữa khung hệ thống (x = 510)
   const singleSideMode = rightUcs.length === 0;
 
   if (singleSideMode) {
     leftUcs.forEach((uc, i) => {
-      uc.x = 510;
-      uc.y = 115 + i * 88;
+      uc.x = showSubUseCases ? 360 : 510;
+      uc.y = 115 + i * 92;
     });
   } else {
-    // Cột Trái (x = 365) nối thẳng với Actor Trái (x = 88)
+    // Cột Trái nối thẳng với Primary Actor Trái
     leftUcs.forEach((uc, i) => {
-      uc.x = 365;
-      uc.y = 115 + i * 92;
+      uc.x = showSubUseCases ? 335 : 365;
+      uc.y = 115 + i * 94;
     });
-    // Cột Phải (x = 655) nối thẳng với Actor Phải (x = 932)
+    // Cột Phải nối thẳng với Secondary Actor Phải
     rightUcs.forEach((uc, i) => {
-      uc.x = 655;
-      uc.y = 115 + i * 92;
+      uc.x = showSubUseCases ? 685 : 655;
+      uc.y = 115 + i * 94;
     });
   }
 
-  const maxRows = Math.max(leftUcs.length, rightUcs.length, 1);
-  const totalH = Math.max(115 + maxRows * 92 + 65, 440);
+  // Nếu bật chế độ hiển thị Use Case con (<<include>> / <<extend>>)
+  if (showSubUseCases) {
+    let subCounter = 0;
+    const allMainUcs = [...leftUcs, ...rightUcs];
+    allMainUcs.forEach((parentUc) => {
+      const subs = (parentUc.subUseCases || []).slice(0, 1);
+      subs.forEach((subItem) => {
+        const subName = stripUseCasePrefixAndActor(subItem.target_name || '');
+        if (!subName || subName.toLowerCase() === parentUc.name.toLowerCase()) return;
+        subCounter += 1;
+        const subId = `sub_uc_${subCounter}`;
+        const relType = subItem.rel_type === 'extend' ? 'extend' : 'include';
+        const subNode = {
+          id: subId,
+          code: `SUB-${String(subCounter).padStart(2, '0')}`,
+          name: subName,
+          actorName: parentUc.actorName,
+          side: 'center',
+          isSubUseCase: true,
+          x: singleSideMode ? 655 : 510,
+          y: parentUc.y,
+        };
+        centerSubUcs.push(subNode);
+        useCases.push(subNode);
+        // Quy tắc UML 2.5: chỉ nối từ Use Case cha sang Use Case con (<<include>>/<<extend>>), KHÔNG nối từ Actor vào Use Case con
+        links.push({
+          id: `link_sub_${subCounter}`,
+          from: parentUc.id,
+          to: subId,
+          type: relType,
+        });
+      });
+    });
+
+    // Chống trùng tọa độ Y ở cột giữa cho các Use Case con
+    centerSubUcs.sort((a, b) => a.y - b.y);
+    for (let i = 1; i < centerSubUcs.length; i++) {
+      if (centerSubUcs[i].y - centerSubUcs[i - 1].y < 76) {
+        centerSubUcs[i].y = centerSubUcs[i - 1].y + 76;
+      }
+    }
+  }
+
+  const maxRows = Math.max(leftUcs.length, rightUcs.length, centerSubUcs.length, 1);
+  const totalH = Math.max(115 + maxRows * 94 + 65, 440);
 
   // Đặt tọa độ Y của từng Actor đúng bằng trung bình cộng Y của nhóm Use Case thuộc Actor đó!
   const actors = Array.from(actorMap.values());
@@ -317,6 +430,8 @@ export default function UmlCanvasStudio({
 }) {
   // Chế độ lọc chống rối mắt: 'core' (<= 10 chức năng cốt lõi) | tên Actor | 'all'
   const [actorFilter, setActorFilter] = useState('core');
+  // Mặc định bật phân tách Use Case con (<<include>> / <<extend>>) khi xem theo 1 Actor, hoặc bật thủ công
+  const [showSubUseCases, setShowSubUseCases] = useState(false);
 
   const allFunctionalStories = useMemo(
     () => filterFunctionalStories(userStories, requirements, 'all'),
@@ -334,7 +449,7 @@ export default function UmlCanvasStudio({
   );
 
   const [graph, setGraph] = useState(() =>
-    buildDualSideGraph(visibleStories, projectName)
+    buildDualSideGraph(visibleStories, projectName, showSubUseCases)
   );
   const [selectedItem, setSelectedItem] = useState(null);
   const [dragging, setDragging] = useState(null);
@@ -347,12 +462,12 @@ export default function UmlCanvasStudio({
   const svgRef = useRef(null);
 
   useEffect(() => {
-    const nextGraph = buildDualSideGraph(visibleStories, projectName);
+    const nextGraph = buildDualSideGraph(visibleStories, projectName, showSubUseCases);
     setGraph(nextGraph);
     setPumlText(generatePlantUmlFromGraph(nextGraph));
     setSelectedItem(null);
     setConnectMode(null);
-  }, [visibleStories, projectName]);
+  }, [visibleStories, projectName, showSubUseCases]);
 
   const syncToBackend = (updatedGraph) => {
     const code = generatePlantUmlFromGraph(updatedGraph);
@@ -553,7 +668,7 @@ export default function UmlCanvasStudio({
   };
 
   const handleResetLayout = () => {
-    const fresh = buildDualSideGraph(visibleStories, projectName);
+    const fresh = buildDualSideGraph(visibleStories, projectName, showSubUseCases);
     setGraph(fresh);
     setSelectedItem(null);
     setConnectMode(null);
@@ -652,7 +767,7 @@ export default function UmlCanvasStudio({
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           <button
             type="button"
             className={`filter-tab ${mode === 'canvas' ? 'active' : ''}`}
@@ -662,10 +777,17 @@ export default function UmlCanvasStudio({
           </button>
           <button
             type="button"
+            className={`filter-tab ${mode === 'mapping' ? 'active' : ''}`}
+            onClick={() => setMode('mapping')}
+          >
+            Phần 1: Bảng ánh xạ Actor – Use Case
+          </button>
+          <button
+            type="button"
             className={`filter-tab ${mode === 'code' ? 'active' : ''}`}
             onClick={() => setMode('code')}
           >
-            Mã PlantUML (@startuml)
+            Phần 2: Mã PlantUML (@startuml)
           </button>
         </div>
       </div>
@@ -725,6 +847,22 @@ export default function UmlCanvasStudio({
                 Tất cả ({allFunctionalStories.length})
               </button>
             )}
+
+            <button
+              type="button"
+              className={`filter-tab ${showSubUseCases ? 'active' : ''}`}
+              style={{
+                padding: '5px 12px',
+                fontSize: '0.8rem',
+                marginLeft: 'auto',
+                borderColor: showSubUseCases ? '#2563EB' : '#94A3B8',
+              }}
+              onClick={() => setShowSubUseCases((prev) => !prev)}
+            >
+              {showSubUseCases
+                ? '✓ Đang bật: Phân tách Use Case con («include» / «extend»)'
+                : '+ Hiện Use Case con («include» / «extend»)'}
+            </button>
           </div>
 
           {/* DRAWING & EXPORT TOOLBAR */}
@@ -1206,6 +1344,99 @@ export default function UmlCanvasStudio({
                 );
               })}
             </svg>
+          </div>
+        </div>
+      )}
+
+      {mode === 'mapping' && (
+        <div>
+          <div
+            style={{
+              background: '#EFF6FF',
+              border: '1px solid #BFDBFE',
+              borderRadius: '10px',
+              padding: '12px 16px',
+              marginBottom: '14px',
+              fontSize: '0.88rem',
+              color: '#1E3A8A',
+            }}
+          >
+            <strong>Phần 1: Bảng ánh xạ Actor – Use Case chuẩn UML 2.5</strong> — Kiểm chứng tính đầy đủ giữa Tác nhân (Primary / Secondary Actors), Ca sử dụng chính (Động từ + Đối tượng, đã loại bỏ mã FR-xx/UC-xx) và các Ca sử dụng con (<code>«include»</code> / <code>«extend»</code>).
+          </div>
+
+          <div style={{ overflowX: 'auto' }}>
+            <table
+              style={{
+                width: '100%',
+                borderCollapse: 'collapse',
+                fontSize: '0.88rem',
+                background: '#FFFFFF',
+                border: '1px solid #E2E8F0',
+                borderRadius: '8px',
+              }}
+            >
+              <thead>
+                <tr style={{ background: '#F8FAFC', borderBottom: '2px solid #CBD5E1', textAlign: 'left' }}>
+                  <th style={{ padding: '10px 14px', color: '#0F172A' }}>Mã YC</th>
+                  <th style={{ padding: '10px 14px', color: '#0F172A' }}>Tác nhân (Actor)</th>
+                  <th style={{ padding: '10px 14px', color: '#0F172A' }}>Loại Actor</th>
+                  <th style={{ padding: '10px 14px', color: '#0F172A' }}>Use Case Chính (Động từ + Đối tượng)</th>
+                  <th style={{ padding: '10px 14px', color: '#0F172A' }}>Use Case Con («include» / «extend»)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allFunctionalStories.map((us, i) => {
+                  const roleName = (us.role || 'Người dùng').trim();
+                  const isSec = isSecondaryActorRole(roleName);
+                  const subs = Array.isArray(us.sub_usecases) ? us.sub_usecases : [];
+                  return (
+                    <tr key={us.story_id || i} style={{ borderBottom: '1px solid #E2E8F0' }}>
+                      <td style={{ padding: '10px 14px', fontWeight: 700, color: '#334155' }}>
+                        {us.req_id}
+                      </td>
+                      <td style={{ padding: '10px 14px', fontWeight: 600, color: '#0F172A' }}>
+                        {roleName}
+                      </td>
+                      <td style={{ padding: '10px 14px' }}>
+                        <span
+                          className={`badge ${isSec ? 'badge-nfr' : 'badge-fr'}`}
+                          style={{ fontSize: '0.75rem' }}
+                        >
+                          {isSec ? 'Secondary (Bên phải)' : 'Primary (Bên trái)'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '10px 14px', fontWeight: 700, color: '#1E3A8A' }}>
+                        {stripUseCasePrefixAndActor(us.puml_usecase_name)}
+                      </td>
+                      <td style={{ padding: '10px 14px', color: '#475569' }}>
+                        {subs.length > 0 ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            {subs.map((s, sIdx) => (
+                              <span key={sIdx} style={{ fontSize: '0.82rem' }}>
+                                <code
+                                  style={{
+                                    background: '#F1F5F9',
+                                    padding: '2px 6px',
+                                    borderRadius: '4px',
+                                    color: '#0F172A',
+                                    marginRight: '6px',
+                                  }}
+                                >
+                                  {`«${s.rel_type || 'include'}»`}
+                                </code>
+                                {stripUseCasePrefixAndActor(s.target_name)}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span style={{ color: '#94A3B8', fontSize: '0.8rem' }}>—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

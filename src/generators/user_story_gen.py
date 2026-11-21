@@ -8,21 +8,25 @@ import json
 import re
 from typing import List, Optional
 from src.classifiers.llm_client import MultiLLMClient
-from src.core.models import AcceptanceCriteriaDTO, RequirementDTO, UserStoryDTO
+from src.core.models import AcceptanceCriteriaDTO, RequirementDTO, UseCaseRelDTO, UserStoryDTO
 
 BATCH_USER_STORY_PROMPT = """
-Bạn là một Senior Business Analyst / Agile Product Owner.
+Bạn là một Senior Business Analyst và Kiến trúc sư Hệ thống thành thạo chuẩn UML 2.5.
 Hãy phân tích danh sách các câu yêu cầu phần mềm thực tế dưới đây và chuyển đổi MỖI CÂU
-thành một Agile User Story chuẩn INVEST kèm 2 kịch bản nghiệm thu Gherkin BDD.
+thành một Agile User Story chuẩn INVEST, kèm Use Case UML 2.5 (Động từ + Đối tượng, KHÔNG chứa mã FR-xx/UC-xx)
+và 2 kịch bản nghiệm thu Gherkin BDD.
 
 QUY TẮC BẮT BUỘC:
 1. Bám sát 100% nội dung nghiệp vụ, đối tượng và hành động thực tế của từng câu yêu cầu.
-2. 'role': Tác nhân thực tế trong câu (ví dụ: Khách mua hàng, Quản trị viên, Nhân viên kho, Kỹ sư vận hành...).
+2. 'role': Tác nhân thực tế (Roles) trong phần Đối tượng sử dụng & Phân quyền
+   (VD: Quản trị viên hệ thống, Chuyên viên Nhân sự (HR), Quản lý trực tiếp, Nhân viên, Thủ kho...).
 3. 'goal': Hành động hoặc tính năng cụ thể rút ra trực tiếp từ câu yêu cầu.
 4. 'benefit': Giá trị nghiệp vụ thực tế mà tính năng đó mang lại.
-5. 'puml_usecase_name': Tên chức năng (Use Case) ngắn gọn từ 3-7 từ phản ánh đúng hành động của câu đó.
-6. 'acceptance_criteria': Gồm ít nhất 2 kịch bản cụ thể (1 luồng thành công và 1 luồng kiểm tra ràng buộc/ngoại lệ)
-   với các thông số, trường dữ liệu và thông báo cụ thể của chức năng đó.
+5. 'puml_usecase_name': Tên Ca sử dụng bắt buộc theo cấu trúc [Động từ hành động] + [Đối tượng nghiệp vụ]
+   (3-6 từ). TUYỆT ĐỐI KHÔNG gắn mã yêu cầu (FR-01:, UC-01:) hoặc tên Actor vào bên trong tên Use Case.
+6. 'sub_usecases': Danh sách các bước xử lý chi tiết hoặc tính năng phụ trợ nằm bên trong nghiệp vụ lớn
+   được tách thành Use Case con với quan hệ 'include' (bắt buộc có) hoặc 'extend' (tùy chọn/điều kiện).
+7. 'acceptance_criteria': Gồm ít nhất 2 kịch bản cụ thể (1 luồng thành công và 1 luồng kiểm tra ràng buộc/ngoại lệ).
 
 BẮT BUỘC TRẢ VỀ ĐÚNG ĐỊNH DẠNG JSON NHƯ SAU:
 {
@@ -33,6 +37,9 @@ BẮT BUỘC TRẢ VỀ ĐÚNG ĐỊNH DẠNG JSON NHƯ SAU:
       "goal": "...",
       "benefit": "...",
       "puml_usecase_name": "...",
+      "sub_usecases": [
+        {"target_name": "...", "rel_type": "include"}
+      ],
       "acceptance_criteria": [
         {
           "scenario": "...",
@@ -83,6 +90,22 @@ class UserStoryGenerator:
             return None
 
         default_role = "Người dùng hệ thống" if lang == "vi" else "System User"
+        raw_uc_name = data.get("puml_usecase_name", "").strip() or req.raw_text[:35].strip()
+        clean_uc_name = self._strip_usecase_prefix_and_actor(raw_uc_name)
+
+        sub_ucs = []
+        for s_item in data.get("sub_usecases", []) or []:
+            if isinstance(s_item, dict) and s_item.get("target_name"):
+                t_name = self._strip_usecase_prefix_and_actor(s_item["target_name"])
+                r_type = s_item.get("rel_type", "include").lower().strip()
+                if r_type not in ("include", "extend"):
+                    r_type = "include"
+                if t_name and t_name.lower() != clean_uc_name.lower():
+                    sub_ucs.append(UseCaseRelDTO(target_name=t_name, rel_type=r_type))
+
+        if not sub_ucs:
+            sub_ucs = self._extract_sub_usecases(req.raw_text, clean_uc_name)
+
         return UserStoryDTO(
             story_id=story_id,
             req_id=req.req_id,
@@ -90,8 +113,89 @@ class UserStoryGenerator:
             goal=data.get("goal", req.raw_text).strip(),
             benefit=data.get("benefit", "").strip() or req.raw_text,
             acceptance_criteria=acs,
-            puml_usecase_name=data.get("puml_usecase_name", "").strip() or req.raw_text[:35].strip(),
+            puml_usecase_name=clean_uc_name,
+            sub_usecases=sub_ucs,
         )
+
+    @staticmethod
+    def _strip_usecase_prefix_and_actor(name: str) -> str:
+        """Loại bỏ triệt để mã FR-xx/UC-xx/REQ-xx và tên Actor khỏi tên Use Case theo chuẩn UML 2.5."""
+        cleaned = (name or "").strip()
+        # Xóa tiền tố FR-01:, UC-01:, REQ-01:, BR-01:
+        cleaned = re.sub(
+            r"^(?:FR|UC|REQ|NFR|BR|US)\s*[-_]?\s*\d+\s*[—\-:.)]*\s*",
+            "",
+            cleaned,
+            flags=re.IGNORECASE,
+        ).strip()
+        # Xóa tiền tố tên Actor nếu bị dính vào đầu tên Use Case (VD: "Kế toán - Kiểm tra", "HR: Quản lý")
+        cleaned = re.sub(
+            r"^(?:Quản\s+trị\s+viên(?:\s+hệ\s+thống)?|Chuyên\s+viên\s+Nhân\s+sự(?:\s*\(HR\))?|"
+            r"Quản\s+lý\s+trực\s+tiếp|Nhân\s+viên|Kế\s+toán|Thủ\s+kho|Khách\s+hàng|HR)\s*[—\-:]\s*",
+            "",
+            cleaned,
+            flags=re.IGNORECASE,
+        ).strip()
+        if not cleaned:
+            return name.strip()
+        return cleaned[0].upper() + cleaned[1:]
+
+    @classmethod
+    def _extract_sub_usecases(cls, raw_text: str, parent_uc_name: str) -> List[UseCaseRelDTO]:
+        """Phân tách bước xử lý chi tiết bên trong nghiệp vụ lớn thành Use Case con (<<include>> / <<extend>>)."""
+        raw = (raw_text or "").strip()
+        low = raw.lower()
+        subs: List[UseCaseRelDTO] = []
+
+        # 1. Nếu là các phân hệ chuẩn trong BRD (FR-01..FR-06 hoặc WMS/E-commerce)
+        if re.search(r"\bfr-0?1\b|hồ\s+sơ\s+nhân\s+sự", low):
+            if "hợp đồng" in low:
+                subs.append(UseCaseRelDTO(target_name="Theo dõi trạng thái hợp đồng", rel_type="include"))
+            if "lịch sử" in low or "thăng tiến" in low or "điều chuyển" in low:
+                subs.append(UseCaseRelDTO(target_name="Lưu vết lịch sử công tác", rel_type="extend"))
+        elif re.search(r"\bfr-0?2\b|cơ\s+cấu\s+tổ\s+chức", low):
+            if "phòng ban" in low or "vị trí" in low:
+                subs.append(UseCaseRelDTO(target_name="Thiết lập sơ đồ phòng ban", rel_type="include"))
+            if "quản lý trực tiếp" in low or "phê duyệt" in low:
+                subs.append(UseCaseRelDTO(target_name="Gán cấp quản lý phê duyệt", rel_type="include"))
+        elif re.search(r"\bfr-0?3\b", low) or low.startswith("chấm công"):
+            if "máy chấm công" in low or "gps" in low or "wifi" in low or "dữ liệu" in low:
+                subs.append(UseCaseRelDTO(target_name="Đồng bộ dữ liệu chấm công", rel_type="include"))
+            if "đi muộn" in low or "về sớm" in low or "khấu trừ" in low:
+                subs.append(UseCaseRelDTO(target_name="Tính thời gian đi muộn, về sớm", rel_type="include"))
+        elif re.search(r"\bfr-0?4\b|nghỉ\s+phép\s*&\s*đơn\s+từ", low):
+            if "quỹ phép" in low or "trừ" in low:
+                subs.append(UseCaseRelDTO(target_name="Kiểm tra và trừ quỹ phép", rel_type="include"))
+            if "email" in low or "thông báo" in low:
+                subs.append(UseCaseRelDTO(target_name="Gửi thông báo trạng thái đơn", rel_type="include"))
+        elif re.search(r"\bfr-0?5\b|tính\s+lương", low):
+            if "bhxh" in low or "thuế" in low or "tncn" in low or "khấu trừ" in low:
+                subs.append(UseCaseRelDTO(target_name="Khấu trừ BHXH và thuế TNCN", rel_type="include"))
+            if "phiếu lương" in low or "payslip" in low:
+                subs.append(UseCaseRelDTO(target_name="Xuất phiếu lương cá nhân", rel_type="extend"))
+        elif re.search(r"\bfr-0?6\b|báo\s+cáo\s*&\s*dashboard", low):
+            if "excel" in low or "pdf" in low or "xuất" in low:
+                subs.append(UseCaseRelDTO(target_name="Xuất báo cáo Excel / PDF", rel_type="extend"))
+
+        # 2. Nhận diện mẫu tổng quát cho mọi tài liệu BRD/SRS khác (WMS, E-commerce, NLP, v.v.)
+        if not subs:
+            generic_patterns = [
+                (r"quét\s+mã\s+vạch|barcode|qr\s*code", "Quét mã vạch sản phẩm", "include"),
+                (r"kiểm\s+tra\s+tồn\s+kho", "Kiểm tra số lượng tồn kho", "include"),
+                (r"gợi\s+ý\s+vị\s+trí", "Gợi ý vị trí lưu kho", "include"),
+                (r"xác\s+thực\s+đăng\s+nhập|xác\s+thực\s+2\s+lớp|otp|2fa", "Xác thực bảo mật tài khoản", "include"),
+                (r"phân\s+quyền\s+theo\s+vai\s+trò|rbac", "Phân quyền truy cập RBAC", "include"),
+                (r"thanh\s+toán\s+trực\s+tuyến|cổng\s+thanh\s+toán", "Xử lý thanh toán trực tuyến", "include"),
+                (r"xuất\s+(?:báo\s+cáo|file|dữ\s+liệu)\s+(?:ra\s+)?(?:excel|pdf|csv|word)", "Xuất tệp báo cáo", "extend"),
+                (r"gửi\s+(?:email|thông\s+báo)", "Gửi thông báo tự động", "include"),
+            ]
+            for pat, sub_label, rel in generic_patterns:
+                if re.search(pat, low) and sub_label.lower() != parent_uc_name.lower():
+                    subs.append(UseCaseRelDTO(target_name=sub_label, rel_type=rel))
+                    if len(subs) >= 2:
+                        break
+
+        return subs
 
     def generate_single_story(self, req: RequirementDTO, lang: str = "vi") -> UserStoryDTO:
         """Sinh User Story cho một câu yêu cầu đơn lẻ."""
@@ -104,18 +208,30 @@ class UserStoryGenerator:
         raw = goal.strip()
 
         # 1. Nếu là dòng bảng đặc tả có dạng "FR-01 — Tên Phân hệ — Mô tả..."
+        # Quy tắc UML 2.5 nghiêm ngặt: Bắt đầu bằng [Động từ hành động] + [Đối tượng nghiệp vụ],
+        # TUYỆT ĐỐI KHÔNG gắn mã yêu cầu (FR-01:, UC-01:) vào tên Use Case.
         fr_table_match = re.match(
-            r"^(?:Hệ thống / Người dùng thực hiện:\s*)?(FR-\d+)\s*[—\-:]\s*([^—\-:]+?)(?:\s*[—\-:]\s*(.+))?$",
+            r"^(?:Hệ thống / Người dùng thực hiện:\s*)?(?:FR|UC|REQ)-\d+\s*[—\-:]\s*([^—\-:]+?)(?:\s*[—\-:]\s*(.+))?$",
             raw,
             flags=re.IGNORECASE,
         )
         if fr_table_match:
-            fr_code = fr_table_match.group(1).upper()
-            module_name = re.sub(r"\([^)]*\)", "", fr_table_match.group(2)).strip()
+            module_name = re.sub(r"\([^)]*\)", "", fr_table_match.group(1)).strip()
             if module_name:
-                if not re.match(r"^(Quản lý|Thiết lập|Xử lý|Xem|Tạo|Tính|Chấm)\b", module_name, flags=re.IGNORECASE):
-                    return f"{fr_code}: Quản lý {module_name}"
-                return f"{fr_code}: {module_name}"
+                low_mod = module_name.lower()
+                if "chấm công" in low_mod:
+                    return "Quản lý chấm công"
+                if "tính lương" in low_mod:
+                    return "Tính lương và phúc lợi"
+                if "báo cáo" in low_mod and "dashboard" in low_mod:
+                    return "Xem báo cáo và Dashboard"
+                if not re.match(
+                    r"^(Quản lý|Thiết lập|Xử lý|Xem|Tạo|Tính|Chấm|Phê duyệt|Tra cứu|Cấu hình)\b",
+                    module_name,
+                    flags=re.IGNORECASE,
+                ):
+                    return f"Quản lý {module_name}"
+                return module_name
 
         # 2. Nếu là dòng định nghĩa Vai trò trong bảng Stakeholder ("Quản trị viên hệ thống (System Admin) — Cấu hình...")
         role_table_match = re.match(
@@ -286,7 +402,8 @@ class UserStoryGenerator:
         ).strip()
 
         goal = clean_goal if clean_goal else text
-        uc_name = self._build_clean_usecase_name(text, lang=lang)
+        uc_name = self._strip_usecase_prefix_and_actor(self._build_clean_usecase_name(text, lang=lang))
+        sub_ucs = self._extract_sub_usecases(text, uc_name)
 
         if lang == "vi":
             benefit = f"đảm bảo thực thi đúng yêu cầu: {text}"
@@ -329,6 +446,7 @@ class UserStoryGenerator:
             benefit=benefit,
             acceptance_criteria=acs,
             puml_usecase_name=uc_name,
+            sub_usecases=sub_ucs,
         )
 
     def generate_stories_batch(self, requirements: List[RequirementDTO], lang: str = "vi") -> List[UserStoryDTO]:

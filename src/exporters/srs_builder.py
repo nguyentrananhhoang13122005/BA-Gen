@@ -89,12 +89,19 @@ class SRSBuilder:
                 lines.append(f"  - **THEN** {ac.then}")
 
         lines.extend([
-            "\n## 6. Ma trận Truy vết Yêu cầu (Traceability Matrix)",
-            "| Mã Yêu cầu (Requirement) | Mã User Story | Ca sử dụng (Use Case) |",
-            "| :--- | :--- | :--- |"
+            "\n## 6. Bảng Ánh xạ Tác nhân – Ca sử dụng (Actor – Use Case Mapping - UML 2.5)",
+            (
+                "| Mã Yêu cầu (Requirement) | Tác nhân (Actor) "
+                "| Ca sử dụng Chính (Use Case) | Ca sử dụng Con (<<include>> / <<extend>>) |"
+            ),
+            "| :--- | :--- | :--- | :--- |"
         ])
         for us in self.user_stories:
-            lines.append(f"| `{us.req_id}` | `{us.story_id}` | {us.puml_usecase_name} |")
+            subs_text = ", ".join(
+                f"`<<{s.rel_type}>>` {s.target_name}"
+                for s in getattr(us, "sub_usecases", []) or []
+            ) or "—"
+            lines.append(f"| `{us.req_id}` | **{us.role}** | {us.puml_usecase_name} | {subs_text} |")
 
         return "\n".join(lines)
 
@@ -168,19 +175,25 @@ class SRSBuilder:
                 p_ac.add_run(f"• Kịch bản: {ac.scenario}\n").bold = True
                 p_ac.add_run(f"   GIVEN {ac.given}\n   WHEN {ac.when}\n   THEN {ac.then}")
 
-        doc.add_heading("5. Ma trận Truy vết (Traceability Matrix)", level=1)
-        t_mat = doc.add_table(rows=1, cols=3)
+        doc.add_heading("5. Bảng Ánh xạ Actor – Use Case (Chuẩn UML 2.5)", level=1)
+        t_mat = doc.add_table(rows=1, cols=4)
         t_mat.style = "Table Grid"
         h = t_mat.rows[0].cells
         h[0].text = "Mã Yêu cầu"
-        h[1].text = "Mã User Story"
-        h[2].text = "Ca sử dụng"
+        h[1].text = "Tác nhân (Actor)"
+        h[2].text = "Ca sử dụng Chính (Use Case)"
+        h[3].text = "Ca sử dụng Con (<<include>> / <<extend>>)"
 
         for us in self.user_stories:
             r = t_mat.add_row().cells
             r[0].text = us.req_id
-            r[1].text = us.story_id
+            r[1].text = us.role
             r[2].text = us.puml_usecase_name
+            subs_str = ", ".join(
+                f"<<{s.rel_type}>> {s.target_name}"
+                for s in getattr(us, "sub_usecases", []) or []
+            ) or "—"
+            r[3].text = subs_str
 
         buffer = io.BytesIO()
         doc.save(buffer)

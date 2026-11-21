@@ -27,6 +27,12 @@ class AcceptanceCriteriaDTO(BaseModel):
     then: str
 
 
+class UseCaseRelDTO(BaseModel):
+    """Quan hệ phân tách Use Case con chuẩn UML 2.5 (<<include>> / <<extend>>)."""
+    target_name: str
+    rel_type: str = Field(default="include", description="'include' hoặc 'extend'")
+
+
 class UserStoryDTO(BaseModel):
     """Agile User Story theo mẫu Role - Goal - Benefit kèm Gherkin ACs."""
     story_id: str
@@ -37,6 +43,7 @@ class UserStoryDTO(BaseModel):
     benefit: str
     acceptance_criteria: List[AcceptanceCriteriaDTO] = Field(default_factory=list)
     puml_usecase_name: str = ""
+    sub_usecases: List[UseCaseRelDTO] = Field(default_factory=list)
 
 
 class RequirementDTO(BaseModel):

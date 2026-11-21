@@ -93,8 +93,10 @@ class RequirementAnalysisFacade:
             )
             sentences = sentences[:max_requirements]
 
-        # Khởi tạo thông tin dự án
-        p_name = project_name or (filename.rsplit(".", 1)[0] if "." in filename else "Dự án Mới")
+        # Khởi tạo thông tin dự án: ưu tiên tên nhập tay, hoặc trích xuất chính xác tên hệ thống trong BRD
+        fallback_file_title = filename.rsplit(".", 1)[0] if "." in filename else "Dự án Mới"
+        extracted_sys_name = RequirementSegmenter.extract_system_title(raw_text, fallback_file_title)
+        p_name = project_name or extracted_sys_name
         self.current_project = ProjectDTO(
             project_id=f"PROJ-{uuid.uuid4().hex}",
             project_name=p_name,
@@ -141,7 +143,8 @@ class RequirementAnalysisFacade:
         t4 = time.perf_counter()
         puml_code, puml_bytes = self.plantuml_exporter.export(
             self.current_user_stories,
-            system_title=self.current_project.project_name
+            system_title=self.current_project.project_name,
+            requirements=self.current_requirements,
         )
         self.current_plantuml_code = puml_code
         self.current_plantuml_bytes = puml_bytes
@@ -213,7 +216,9 @@ class RequirementAnalysisFacade:
         self._persist_user_stories()
 
         self.current_plantuml_code, self.current_plantuml_bytes = self.plantuml_exporter.export(
-            self.current_user_stories, system_title=self.current_project.project_name
+            self.current_user_stories,
+            system_title=self.current_project.project_name,
+            requirements=self.current_requirements,
         )
 
     def export_srs_docx(self) -> bytes:

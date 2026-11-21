@@ -23,6 +23,58 @@ class RequirementSegmenter:
     """Tách câu yêu cầu song ngữ Anh - Việt và nhận diện ngôn ngữ."""
 
     @staticmethod
+    def extract_system_title(raw_text: str, fallback_title: str = "Hệ thống Phần mềm") -> str:
+        """Trích xuất tên chính xác của hệ thống phần mềm từ nội dung tài liệu BRD/SRS.
+
+        Tuyệt đối ưu tiên lấy tên phần mềm/hệ thống được nêu trong tài liệu
+        (VD: 'Hệ thống Quản lý Nhân sự (HRM)', 'Hệ thống Quản lý Kho hàng (WMS)')
+        thay vì lấy tên file hoặc tiêu đề tài liệu.
+        """
+        if not raw_text or not raw_text.strip():
+            return fallback_title
+
+        normalized = unicodedata.normalize("NFC", raw_text)
+
+        # 1. Tìm dòng tiêu đề hoặc câu định nghĩa 'HỆ THỐNG QUẢN LÝ ... (XXX)' hoặc 'Hệ thống ... (XXX) được xây dựng'
+        patterns = [
+            r"(Hệ\s+thống\s+Quản\s+lý\s+[^\n.;|—]{2,55}?\([A-Z0-9&\-]{2,15}\))",
+            r"(Hệ\s+thống\s+[^\n.;|—]{3,55}?\([A-Z0-9&\-]{2,15}\))\s+được\s+xây\s+dựng",
+            r"TÀI\s+LIỆU\s+PHÂN\s+TÍCH\s+NGHIỆP\s+VỤ[^\n]*?\n+\s*(HỆ\s+THỐNG\s+[^\n|—]{4,65})",
+            r"(?:Tên\s+hệ\s+thống|Tên\s+phần\s+mềm|Dự\s+án)\s*:\s*(Hệ\s+thống\s+[^\n.;|]{3,65})",
+            r"(Requirements\s+Analysis\s+Assistant(?:\s+Using\s+Natural\s+Language\s+Processing)?)",
+        ]
+        for pat in patterns:
+            match = re.search(pat, normalized, flags=re.IGNORECASE)
+            if match:
+                candidate = " ".join(match.group(1).split()).strip(" —-|:")
+                # Chuẩn hóa viết hoa kiểu Title Case nếu toàn bộ đang IN HOA
+                if candidate.isupper():
+                    # Giữ nguyên chữ viết tắt trong ngoặc đơn (VD: (HRM), (WMS))
+                    def _title_preserve_acronym(m):
+                        return m.group(0).upper()
+
+                    titled = candidate.title()
+                    titled = re.sub(r"\([A-Za-z0-9&\-]+\)", _title_preserve_acronym, titled)
+                    titled = re.sub(r"\bHệ Thống\b", "Hệ thống", titled)
+                    titled = re.sub(r"\bQuản Lý\b", "Quản lý", titled)
+                    return titled
+                return candidate
+
+        # 2. Nếu fallback_title là tên file (VD: Tai_lieu_BA_Quan_ly_Nhan_vien.docx), làm sạch tiền tố tài liệu
+        cleaned = re.sub(r"\.(docx|txt|md|pdf)$", "", fallback_title or "", flags=re.IGNORECASE)
+        cleaned = cleaned.replace("_", " ").strip()
+        cleaned = re.sub(
+            r"^(Tài\s+liệu\s+BA|Tai\s+lieu\s+BA|Tài\s+liệu\s+SRS|BRD|SRS|Topic\s+\d+)\s*[—\-:]?\s*",
+            "",
+            cleaned,
+            flags=re.IGNORECASE,
+        ).strip()
+        if cleaned and not re.match(r"^(Hệ\s+thống|System|Phần\s+mềm)\b", cleaned, flags=re.IGNORECASE):
+            if re.match(r"^(Quản\s+lý|Quan\s+ly)\b", cleaned, flags=re.IGNORECASE):
+                cleaned = f"Hệ thống {cleaned}"
+        return cleaned or "Hệ thống Phần mềm"
+
+    @staticmethod
     def detect_language(text: str) -> str:
         """Nhận diện ngôn ngữ 'vi' hoặc 'en' dựa trên dấu thanh tiếng Việt."""
         normalized = unicodedata.normalize("NFC", text.lower())
