@@ -68,9 +68,11 @@ class HybridClassifierStrategy(IClassifierStrategy):
 
         uncertain_indices: List[int] = []
         uncertain_sentences: List[str] = []
+        ml_by_index = {}
 
         for (orig_idx, sentence), ml_pred in zip(sentences_to_evaluate, ml_predictions):
             ml_pred.req_id = f"REQ-{orig_idx + 1:02d}"
+            ml_by_index[orig_idx] = ml_pred
 
             # Nếu bật ép buộc LLM hoặc độ tin cậy < ngưỡng -> đưa vào danh sách gọi LLM
             if self.force_llm_mode or ml_pred.confidence < self.confidence_threshold:
@@ -78,6 +80,12 @@ class HybridClassifierStrategy(IClassifierStrategy):
                 uncertain_sentences.append(sentence)
             else:
                 results[orig_idx] = ml_pred
+
+        def keep_ml_fallback(indices: List[int]):
+            """Giữ kết quả LinearSVC cho các câu LLM chưa trả về."""
+            for idx in indices:
+                if results[idx] is None:
+                    results[idx] = ml_by_index[idx]
 
         # Tầng 3: Định tuyến các câu chưa chắc chắn sang LLM API
         if uncertain_sentences and self.llm_client.is_configured():
@@ -98,17 +106,21 @@ class HybridClassifierStrategy(IClassifierStrategy):
                             "confidence": llm_pred.confidence
                         }
                     )
+                # LLM có thể trả thiếu kết quả -> bù bằng kết quả ML theo đúng orig_idx
+                keep_ml_fallback(uncertain_indices)
             except Exception as exc:
                 if self.strict_llm:
                     raise RuntimeError(f"Lỗi kết nối API AI ({self.llm_client.provider}): {str(exc)}") from exc
                 # Kích hoạt Circuit-Breaker: giữ kết quả của LinearSVC nếu LLM lỗi mạng/quota
-                for orig_idx, ml_pred in zip(uncertain_indices, ml_predictions):
-                    if results[orig_idx] is None:
-                        results[orig_idx] = ml_pred
+                keep_ml_fallback(uncertain_indices)
         else:
             # Nếu không cấu hình LLM hoặc không có kết nối, dùng kết quả ML
-            for (orig_idx, _), ml_pred in zip(sentences_to_evaluate, ml_predictions):
-                if results[orig_idx] is None:
-                    results[orig_idx] = ml_pred
+            keep_ml_fallback(uncertain_indices)
+
+        for idx, result in enumerate(results):
+            if result is None:
+                results[idx] = ml_by_index.get(idx) or RequirementDTO(
+                    req_id=f"REQ-{idx + 1:02d}", raw_text=sentences[idx]
+                )
 
         return results
