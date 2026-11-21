@@ -5,15 +5,11 @@ from fastapi.testclient import TestClient
 
 from app import app
 from src.core.sessions import SESSION_COOKIE_NAME, SessionManager, SessionState
+from tests.helpers import analyze_and_wait
 
 
 def _analyze(client: TestClient, text: str) -> dict:
-    response = client.post(
-        "/api/analyze",
-        data={"provider": "local_nlp", "raw_text": text},
-    )
-    assert response.status_code == 200
-    return response.json()
+    return analyze_and_wait(client, {"provider": "local_nlp", "raw_text": text})
 
 
 def test_session_cookie_is_http_only_and_signed():

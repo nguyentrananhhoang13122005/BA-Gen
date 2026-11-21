@@ -11,6 +11,7 @@ import src.core.database as database_module
 import src.core.facade as facade_module
 from app import app
 from src.core.config import AppConfig, get_config
+from tests.helpers import analyze_and_wait
 
 
 def _config(**overrides) -> AppConfig:
@@ -138,7 +139,7 @@ def test_analyze_rate_limit_returns_429(monkeypatch):
         "raw_text": "Người dùng có thể đăng nhập bằng email và mật khẩu.",
     }
 
-    assert client.post("/api/analyze", data=body).status_code == 200
+    analyze_and_wait(client, body)
     limited = client.post("/api/analyze", data=body)
 
     assert limited.status_code == 429

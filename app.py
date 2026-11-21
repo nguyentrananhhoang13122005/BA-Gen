@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 load_dotenv()
 
@@ -26,6 +27,7 @@ from src.classifiers.llm_client import (  # noqa: E402
 )
 from src.core.config import get_config  # noqa: E402
 from src.core.facade import RequirementAnalysisFacade  # noqa: E402
+from src.core.jobs import Job, JobManager  # noqa: E402
 from src.core.sessions import SESSION_COOKIE_NAME, SessionManager, SessionState  # noqa: E402
 from src.core.static_files import is_unsafe_relative_path, resolve_file_under  # noqa: E402
 
@@ -44,6 +46,10 @@ app.add_middleware(
 
 
 session_manager = SessionManager()
+job_manager = JobManager(
+    max_workers=get_config().max_concurrent_jobs,
+    ttl_seconds=get_config().job_ttl_seconds,
+)
 
 CLOUD_PROVIDERS = ("groq", "gemini", "openrouter")
 PROVIDER_ENV_KEYS = {
@@ -290,7 +296,42 @@ def get_config_defaults(session: SessionState = Depends(require_session)):
     }
 
 
-@app.post("/api/analyze")
+def _run_analysis_job(
+    job: Job,
+    session: SessionState,
+    *,
+    llm_client: MultiLLMClient,
+    confidence_threshold: float,
+    force_llm_mode: bool,
+    strict_llm: bool,
+    source,
+    filename: str,
+    size_bytes: int,
+    project_name: Optional[str],
+):
+    """Task chạy trong luồng nền: phân tích tài liệu và trả kết quả đã serialize."""
+    facade = RequirementAnalysisFacade(
+        llm_client=llm_client,
+        confidence_threshold=confidence_threshold,
+        force_llm_mode=force_llm_mode,
+        strict_llm=strict_llm,
+        owner_id=session.owner_id,
+    )
+    with session.lock:
+        session.facade = facade
+        job.check_cancelled()
+        facade.analyze_document(
+            source=source,
+            filename=filename,
+            file_size_bytes=size_bytes,
+            project_name=project_name,
+            progress_callback=job.update_progress,
+        )
+        job.check_cancelled()
+        return _serialize_current_result(facade)
+
+
+@app.post("/api/analyze", status_code=202)
 async def analyze_requirements(
     request: Request,
     provider: Optional[str] = Form(None),
@@ -354,7 +395,9 @@ async def analyze_requirements(
 
     # Nếu chọn local_nlp hoặc chọn ollama nhưng máy chưa cài/bật Ollama port 11434 -> chạy bộ NLP + ML tích hợp
     use_cloud_llm = clean_provider in CLOUD_PROVIDERS
-    use_ollama_live = (clean_provider == "ollama") and is_ollama_running()
+    use_ollama_live = (
+        clean_provider == "ollama" and await run_in_threadpool(is_ollama_running)
+    )
     active_llm_mode = use_cloud_llm or use_ollama_live
 
     llm_client = MultiLLMClient(
@@ -363,36 +406,54 @@ async def analyze_requirements(
         model_name=model_name.strip() or None,
     )
 
-    with session.lock:
-        if not session.check_analyze_rate(config.analyze_rate_limit_per_minute):
-            raise HTTPException(
-                status_code=429,
-                detail=(
-                    "Bạn đã phân tích quá "
-                    f"{config.analyze_rate_limit_per_minute} lần trong 1 phút. "
-                    "Vui lòng thử lại sau."
-                ),
-            )
-        session.facade = RequirementAnalysisFacade(
+    if not session.check_analyze_rate(config.analyze_rate_limit_per_minute):
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                "Bạn đã phân tích quá "
+                f"{config.analyze_rate_limit_per_minute} lần trong 1 phút. "
+                "Vui lòng thử lại sau."
+            ),
+        )
+
+    resolved_project_name = project_name.strip() or None
+    job = job_manager.submit(
+        owner_id=session.owner_id,
+        task=lambda queued_job: _run_analysis_job(
+            queued_job,
+            session,
             llm_client=llm_client,
             confidence_threshold=confidence_threshold,
             force_llm_mode=active_llm_mode,
             strict_llm=use_cloud_llm,
-            owner_id=session.owner_id,
-        )
+            source=source,
+            filename=filename,
+            size_bytes=size_bytes,
+            project_name=resolved_project_name,
+        ),
+    )
+    return JSONResponse(
+        status_code=202,
+        content={"job_id": job.job_id, "status": job.status, "step": job.step},
+    )
 
-        try:
-            session.facade.analyze_document(
-                source=source,
-                filename=filename,
-                file_size_bytes=size_bytes,
-                project_name=project_name.strip() or None,
-            )
-            return _serialize_current_result(session.facade)
-        except ValueError as ve:
-            raise HTTPException(status_code=400, detail=str(ve)) from ve
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+@app.get("/api/jobs/{job_id}")
+def get_analysis_job(job_id: str, session: SessionState = Depends(require_session)):
+    """Trả trạng thái, tiến trình và kết quả cuối cùng của job phân tích."""
+    job = job_manager.get(job_id, session.owner_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Không tìm thấy job phân tích.")
+    return job.to_dict()
+
+
+@app.post("/api/jobs/{job_id}/cancel")
+def cancel_analysis_job(job_id: str, session: SessionState = Depends(require_session)):
+    """Yêu cầu hủy job; pipeline dừng ở ranh giới bước kế tiếp."""
+    job = job_manager.cancel(job_id, session.owner_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Không tìm thấy job phân tích.")
+    return job.to_dict()
 
 
 @app.post("/api/requirements/{req_id}/apply-smart")

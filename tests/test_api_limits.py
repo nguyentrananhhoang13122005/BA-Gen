@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from app import app
 from src.core.config import AppConfig
+from tests.helpers import analyze_and_wait
 
 
 def _config_with(**overrides) -> AppConfig:
@@ -53,9 +54,9 @@ def test_analysis_truncates_requirements_and_reports_warning(monkeypatch):
     monkeypatch.setattr(database_module, "get_config", lambda: config)
 
     client = TestClient(app)
-    response = client.post(
-        "/api/analyze",
-        data={
+    payload = analyze_and_wait(
+        client,
+        {
             "provider": "local_nlp",
             "raw_text": (
                 "Người dùng có thể đăng nhập bằng email. "
@@ -66,8 +67,6 @@ def test_analysis_truncates_requirements_and_reports_warning(monkeypatch):
         },
     )
 
-    assert response.status_code == 200
-    payload = response.json()
     assert len(payload["requirements"]) == 2
     assert payload["warnings"]
     assert "2 câu đầu tiên" in payload["warnings"][0]

@@ -40,23 +40,22 @@ class SessionState:
         )
         self.authenticated = False
         self._analyze_timestamps: deque = deque()
+        self._rate_lock = threading.Lock()
         self.lock = threading.RLock()
 
     def check_analyze_rate(self, limit_per_minute: int) -> bool:
-        """Ghi nhận một lượt analyze nếu chưa vượt hạn mức trượt 60 giây.
-
-        Gọi trong khi đang giữ ``self.lock`` để tránh đếm trùng giữa các request.
-        """
+        """Ghi nhận một lượt analyze nếu chưa vượt hạn mức trượt 60 giây."""
         now = time.time()
-        while (
-            self._analyze_timestamps
-            and now - self._analyze_timestamps[0] >= self.ANALYZE_WINDOW_SECONDS
-        ):
-            self._analyze_timestamps.popleft()
-        if len(self._analyze_timestamps) >= limit_per_minute:
-            return False
-        self._analyze_timestamps.append(now)
-        return True
+        with self._rate_lock:
+            while (
+                self._analyze_timestamps
+                and now - self._analyze_timestamps[0] >= self.ANALYZE_WINDOW_SECONDS
+            ):
+                self._analyze_timestamps.popleft()
+            if len(self._analyze_timestamps) >= limit_per_minute:
+                return False
+            self._analyze_timestamps.append(now)
+            return True
 
 
 class SessionManager:
