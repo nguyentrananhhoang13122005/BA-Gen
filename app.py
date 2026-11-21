@@ -21,6 +21,7 @@ from src.classifiers.llm_client import (  # noqa: E402
     is_real_api_key,
 )
 from src.core.facade import RequirementAnalysisFacade  # noqa: E402
+from src.core.static_files import is_unsafe_relative_path, resolve_file_under  # noqa: E402
 
 app = FastAPI(
     title="BA-Gen API — Requirements Engineering Assistant",
@@ -339,7 +340,9 @@ def sync_trello(req: TrelloSyncRequest):
 
 
 # Phục vụ giao diện React SPA đã build tại thư mục frontend/dist
-FRONTEND_DIST = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend", "dist")
+FRONTEND_DIST = os.path.realpath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend", "dist")
+)
 if os.path.exists(os.path.join(FRONTEND_DIST, "assets")):
     app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIST, "assets")), name="assets")
 
@@ -347,10 +350,12 @@ if os.path.exists(os.path.join(FRONTEND_DIST, "assets")):
 @app.get("/{full_path:path}")
 def serve_react_spa(full_path: str):
     """Phục vụ tệp tĩnh hoặc index.html của React SPA."""
+    if is_unsafe_relative_path(full_path):
+        raise HTTPException(status_code=404, detail="Tệp không tồn tại.")
+    served_file = resolve_file_under(FRONTEND_DIST, full_path)
+    if served_file:
+        return FileResponse(served_file)
     index_path = os.path.join(FRONTEND_DIST, "index.html")
-    requested_path = os.path.join(FRONTEND_DIST, full_path)
-    if full_path and os.path.isfile(requested_path):
-        return FileResponse(requested_path)
     if os.path.isfile(index_path):
         return FileResponse(index_path)
     return {"message": "BA-Gen API Server is running. Build frontend into frontend/dist to view UI."}
