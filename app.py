@@ -209,6 +209,7 @@ async def analyze_requirements(
             confidence_threshold=confidence_threshold,
             force_llm_mode=active_llm_mode,
             strict_llm=use_cloud_llm,
+            owner_id=session.owner_id,
         )
 
         try:

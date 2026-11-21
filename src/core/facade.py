@@ -5,6 +5,7 @@ và toàn bộ đường ống xử lý 6 bước phía sau. Hỗ trợ thao tá
 """
 
 import time
+import uuid
 from typing import Callable, List, Optional, Union
 from src.analyzers.ambiguity_detector import AmbiguityDetector
 from src.classifiers.hybrid_classifier import HybridClassifierStrategy
@@ -29,10 +30,12 @@ class RequirementAnalysisFacade:
         confidence_threshold: Optional[float] = None,
         force_llm_mode: bool = False,
         strict_llm: bool = False,
+        owner_id: Optional[str] = None,
     ):
         self.llm_client = llm_client or MultiLLMClient()
         self.db = db_manager or DatabaseManager()
         self.strict_llm = strict_llm
+        self.owner_id = owner_id
         threshold = get_config().confidence_threshold if confidence_threshold is None else confidence_threshold
         self.classifier = HybridClassifierStrategy(
             llm_client=self.llm_client,
@@ -83,10 +86,11 @@ class RequirementAnalysisFacade:
         # Khởi tạo thông tin dự án
         p_name = project_name or (filename.rsplit(".", 1)[0] if "." in filename else "Dự án Mới")
         self.current_project = ProjectDTO(
-            project_id=f"PROJ-{int(time.time())}",
+            project_id=f"PROJ-{uuid.uuid4().hex}",
             project_name=p_name,
             source_filename=filename,
-            language=lang
+            language=lang,
+            owner_id=self.owner_id,
         )
         self.db.save_project(self.current_project)
 
@@ -118,7 +122,7 @@ class RequirementAnalysisFacade:
         t3 = time.perf_counter()
         stories = self.user_story_gen.generate_stories_batch(self.current_requirements, lang=lang)
         self.current_user_stories = stories
-        self.db.save_user_stories(self.current_user_stories)
+        self._persist_user_stories()
         timings["user_stories_gen_sec"] = round(time.perf_counter() - t3, 3)
 
         # Bước 5: Sinh mã PlantUML và kết xuất sơ đồ Use Case
@@ -180,6 +184,12 @@ class RequirementAnalysisFacade:
         self.db.save_requirements(self.current_requirements)
         self.resync_artifacts()
 
+    def _persist_user_stories(self):
+        if self.current_project:
+            for story in self.current_user_stories:
+                story.project_id = self.current_project.project_id
+        self.db.save_user_stories(self.current_user_stories)
+
     def resync_artifacts(self):
         """Đồng bộ lại User Stories, PlantUML sau khi người dùng chỉnh sửa."""
         if not self.current_project or not self.current_requirements:
@@ -189,7 +199,7 @@ class RequirementAnalysisFacade:
         self.current_user_stories = self.user_story_gen.generate_stories_batch(
             self.current_requirements, lang=lang
         )
-        self.db.save_user_stories(self.current_user_stories)
+        self._persist_user_stories()
 
         self.current_plantuml_code, self.current_plantuml_bytes = self.plantuml_exporter.export(
             self.current_user_stories, system_title=self.current_project.project_name

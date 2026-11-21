@@ -25,9 +25,15 @@ SESSION_COOKIE_NAME = "ba_gen_session"
 class SessionState:
     """Trạng thái riêng của một phiên: facade + khóa chống race."""
 
-    def __init__(self, facade: Optional[RequirementAnalysisFacade] = None):
+    def __init__(
+        self,
+        owner_id: Optional[str] = None,
+        facade: Optional[RequirementAnalysisFacade] = None,
+    ):
+        self.owner_id = owner_id
         self.facade = facade or RequirementAnalysisFacade(
-            llm_client=MultiLLMClient(provider="local_nlp")
+            llm_client=MultiLLMClient(provider="local_nlp"),
+            owner_id=owner_id,
         )
         self.lock = threading.RLock()
 
@@ -85,7 +91,7 @@ class SessionManager:
         session_id = secrets.token_urlsafe(32)
         issued_at = int(time.time())
         token = f"{session_id}.{issued_at}.{self._sign(session_id, issued_at)}"
-        state = SessionState()
+        state = SessionState(owner_id=session_id)
         with self._lock:
             self._purge_expired_locked()
             self._entries[session_id] = (issued_at, state)
