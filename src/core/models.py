@@ -15,6 +15,7 @@ class ProjectDTO(BaseModel):
     project_name: str
     source_filename: str
     language: str = Field(default="vi", description="Ngôn ngữ chính: 'vi' hoặc 'en'")
+    owner_id: Optional[str] = Field(default=None, description="ID phiên sở hữu dự án")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -30,6 +31,7 @@ class UserStoryDTO(BaseModel):
     """Agile User Story theo mẫu Role - Goal - Benefit kèm Gherkin ACs."""
     story_id: str
     req_id: str
+    project_id: str = "default_project"
     role: str
     goal: str
     benefit: str
