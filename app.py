@@ -4,12 +4,16 @@ Thay thế hoàn toàn Streamlit bằng kiến trúc REST API + React Frontend,
 hoạt động 100% trên dữ liệu thật của người dùng và kết nối AI thực tế.
 """
 
+import hmac
 import os
-from typing import Optional
+import threading
+import time
+from collections import deque
+from typing import Dict, Optional
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -32,7 +36,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=list(get_config().cors_origins),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -40,6 +44,74 @@ app.add_middleware(
 
 
 session_manager = SessionManager()
+
+CLOUD_PROVIDERS = ("groq", "gemini", "openrouter")
+PROVIDER_ENV_KEYS = {
+    "groq": "GROQ_API_KEY",
+    "gemini": "GEMINI_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+}
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
+class LoginAttemptLimiter:
+    """Đếm số lần đăng nhập sai theo IP trong cửa sổ trượt 60 giây."""
+
+    WINDOW_SECONDS = 60
+
+    def __init__(self):
+        self._failures: Dict[str, deque] = {}
+        self._lock = threading.Lock()
+
+    def _recent_locked(self, key: str, now: float) -> deque:
+        events = self._failures.get(key)
+        if events is None:
+            return deque()
+        while events and now - events[0] >= self.WINDOW_SECONDS:
+            events.popleft()
+        if not events:
+            self._failures.pop(key, None)
+        return events
+
+    def is_blocked(self, key: str, limit_per_minute: int) -> bool:
+        now = time.time()
+        with self._lock:
+            return len(self._recent_locked(key, now)) >= limit_per_minute
+
+    def record_failure(self, key: str) -> None:
+        now = time.time()
+        with self._lock:
+            events = self._recent_locked(key, now)
+            if not events:
+                events = deque()
+                self._failures[key] = events
+            events.append(now)
+
+    def reset(self, key: Optional[str] = None) -> None:
+        with self._lock:
+            if key is None:
+                self._failures.clear()
+            else:
+                self._failures.pop(key, None)
+
+
+login_limiter = LoginAttemptLimiter()
+
+
+def _client_key(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+def _is_loopback_host(host: str) -> bool:
+    return host in LOOPBACK_HOSTS or host.startswith("127.")
+
+
+def _can_use_env_key(request: Request, session: SessionState) -> bool:
+    """Khóa API của server chỉ dùng cho request localhost hoặc phiên đã đăng nhập."""
+    if session.authenticated:
+        return True
+    host = request.client.host if request.client else ""
+    return _is_loopback_host(host)
 
 
 @app.middleware("http")
@@ -54,7 +126,7 @@ async def attach_session(request: Request, call_next):
             value=new_token,
             max_age=session_manager.ttl_seconds,
             httponly=True,
-            samesite="lax",
+            samesite="strict",
             secure=session_manager.secure_cookie,
             path="/",
         )
@@ -64,6 +136,17 @@ async def attach_session(request: Request, call_next):
 def get_session(request: Request) -> SessionState:
     """FastAPI dependency: trả về phiên đã được middleware gắn vào request."""
     return request.state.session
+
+
+def require_session(session: SessionState = Depends(get_session)) -> SessionState:
+    """Chặn request chưa đăng nhập khi APP_PASSWORD được cấu hình."""
+    if get_config().app_password and not session.authenticated:
+        raise HTTPException(status_code=401, detail="Vui lòng đăng nhập để tiếp tục.")
+    return session
+
+
+class LoginRequest(BaseModel):
+    password: str = ""
 
 
 class SmartRewriteRequest(BaseModel):
@@ -136,8 +219,60 @@ async def _read_upload_limited(file: UploadFile, max_bytes: int) -> bytes:
     return b"".join(chunks)
 
 
+@app.get("/api/auth/status")
+def auth_status(session: SessionState = Depends(get_session)):
+    """Cho biết server có bật đăng nhập hay không và phiên hiện tại đã xác thực."""
+    config = get_config()
+    required = bool(config.app_password)
+    return {
+        "auth_required": required,
+        "authenticated": session.authenticated if required else True,
+        "cookie_secure": config.session_cookie_secure,
+    }
+
+
+@app.post("/api/auth/login")
+def auth_login(
+    payload: LoginRequest,
+    request: Request,
+    session: SessionState = Depends(get_session),
+):
+    """Đăng nhập bằng APP_PASSWORD; sai quá số lần cho phép trả 429."""
+    config = get_config()
+    if not config.app_password:
+        session.authenticated = True
+        return {"auth_required": False, "authenticated": True}
+
+    client_key = _client_key(request)
+    if login_limiter.is_blocked(client_key, config.auth_rate_limit_per_minute):
+        raise HTTPException(
+            status_code=429,
+            detail="Quá nhiều lần đăng nhập sai. Vui lòng thử lại sau 1 phút.",
+        )
+
+    supplied = payload.password.encode("utf-8")
+    expected = config.app_password.encode("utf-8")
+    if not hmac.compare_digest(supplied, expected):
+        login_limiter.record_failure(client_key)
+        raise HTTPException(status_code=401, detail="Mật khẩu không đúng.")
+
+    login_limiter.reset(client_key)
+    session.authenticated = True
+    return {"auth_required": True, "authenticated": True}
+
+
+@app.post("/api/auth/logout")
+def auth_logout(request: Request, session: SessionState = Depends(get_session)):
+    """Đăng xuất: hủy phiên phía máy chủ và xóa cookie."""
+    session.authenticated = False
+    session_manager.invalidate(request.cookies.get(SESSION_COOKIE_NAME))
+    response = JSONResponse({"authenticated": False})
+    response.delete_cookie(SESSION_COOKIE_NAME, path="/")
+    return response
+
+
 @app.get("/api/config-defaults")
-def get_config_defaults():
+def get_config_defaults(session: SessionState = Depends(require_session)):
     """Trả về cấu hình mặc định từ môi trường và trạng thái Ollama (không lộ khóa)."""
     config = get_config()
     groq_env = os.getenv("GROQ_API_KEY", "")
@@ -157,6 +292,7 @@ def get_config_defaults():
 
 @app.post("/api/analyze")
 async def analyze_requirements(
+    request: Request,
     provider: Optional[str] = Form(None),
     api_key: str = Form(""),
     model_name: str = Form(""),
@@ -164,7 +300,7 @@ async def analyze_requirements(
     project_name: str = Form(""),
     raw_text: str = Form(""),
     file: Optional[UploadFile] = File(None),
-    session: SessionState = Depends(get_session),
+    session: SessionState = Depends(require_session),
 ):
     """Phân tích tài liệu yêu cầu thực tế qua đường ống AI/NLP 6 bước."""
     config = get_config()
@@ -178,17 +314,12 @@ async def analyze_requirements(
         )
     effective_key = api_key.strip()
 
-    if not effective_key and clean_provider in ("groq", "gemini", "openrouter"):
-        env_map = {
-            "groq": "GROQ_API_KEY",
-            "gemini": "GEMINI_API_KEY",
-            "openrouter": "OPENROUTER_API_KEY",
-        }
-        env_candidate = os.getenv(env_map[clean_provider], "")
+    if not effective_key and clean_provider in CLOUD_PROVIDERS and _can_use_env_key(request, session):
+        env_candidate = os.getenv(PROVIDER_ENV_KEYS[clean_provider], "")
         if is_real_api_key(env_candidate):
             effective_key = env_candidate
 
-    if clean_provider in ("groq", "gemini", "openrouter") and not is_real_api_key(effective_key):
+    if clean_provider in CLOUD_PROVIDERS and not is_real_api_key(effective_key):
         raise HTTPException(
             status_code=400,
             detail=(
@@ -222,7 +353,7 @@ async def analyze_requirements(
         )
 
     # Nếu chọn local_nlp hoặc chọn ollama nhưng máy chưa cài/bật Ollama port 11434 -> chạy bộ NLP + ML tích hợp
-    use_cloud_llm = clean_provider in ("groq", "gemini", "openrouter")
+    use_cloud_llm = clean_provider in CLOUD_PROVIDERS
     use_ollama_live = (clean_provider == "ollama") and is_ollama_running()
     active_llm_mode = use_cloud_llm or use_ollama_live
 
@@ -233,6 +364,15 @@ async def analyze_requirements(
     )
 
     with session.lock:
+        if not session.check_analyze_rate(config.analyze_rate_limit_per_minute):
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    "Bạn đã phân tích quá "
+                    f"{config.analyze_rate_limit_per_minute} lần trong 1 phút. "
+                    "Vui lòng thử lại sau."
+                ),
+            )
         session.facade = RequirementAnalysisFacade(
             llm_client=llm_client,
             confidence_threshold=confidence_threshold,
@@ -259,7 +399,7 @@ async def analyze_requirements(
 def apply_smart_single(
     req_id: str,
     body: SmartRewriteRequest,
-    session: SessionState = Depends(get_session),
+    session: SessionState = Depends(require_session),
 ):
     """Áp dụng câu viết lại chuẩn SMART cho một yêu cầu cụ thể."""
     with session.lock:
@@ -270,7 +410,7 @@ def apply_smart_single(
 
 
 @app.post("/api/requirements/apply-smart-all")
-def apply_smart_all(session: SessionState = Depends(get_session)):
+def apply_smart_all(session: SessionState = Depends(require_session)):
     """Áp dụng câu viết lại chuẩn SMART cho toàn bộ các câu đang bị mơ hồ."""
     with session.lock:
         if not session.facade.current_project:
@@ -291,7 +431,7 @@ def apply_smart_all(session: SessionState = Depends(get_session)):
 def update_requirement_type(
     req_id: str,
     body: UpdateTypeRequest,
-    session: SessionState = Depends(get_session),
+    session: SessionState = Depends(require_session),
 ):
     """Cập nhật nhãn phân loại FR/NFR và danh mục ISO 25010 cho một câu yêu cầu."""
     with session.lock:
@@ -302,7 +442,7 @@ def update_requirement_type(
 
 
 @app.get("/api/export/srs-docx")
-def export_srs_docx(session: SessionState = Depends(get_session)):
+def export_srs_docx(session: SessionState = Depends(require_session)):
     """Tải tệp báo cáo đặc tả SRS định dạng Microsoft Word (.docx)."""
     with session.lock:
         if not session.facade.current_project:
@@ -316,7 +456,7 @@ def export_srs_docx(session: SessionState = Depends(get_session)):
 
 
 @app.get("/api/export/srs-md")
-def export_srs_md(session: SessionState = Depends(get_session)):
+def export_srs_md(session: SessionState = Depends(require_session)):
     """Tải tệp báo cáo đặc tả SRS định dạng Markdown (.md)."""
     with session.lock:
         if not session.facade.current_project:
@@ -330,7 +470,7 @@ def export_srs_md(session: SessionState = Depends(get_session)):
 
 
 @app.get("/api/export/diagram-png")
-def export_diagram_png(session: SessionState = Depends(get_session)):
+def export_diagram_png(session: SessionState = Depends(require_session)):
     """Trả về ảnh PNG sơ đồ Use Case UML 2.5."""
     with session.lock:
         if not session.facade.current_plantuml_bytes:
@@ -343,7 +483,7 @@ def export_diagram_png(session: SessionState = Depends(get_session)):
 
 
 @app.get("/api/export/diagram-puml")
-def export_diagram_puml(session: SessionState = Depends(get_session)):
+def export_diagram_puml(session: SessionState = Depends(require_session)):
     """Tải mã nguồn PlantUML (.puml)."""
     with session.lock:
         if not session.facade.current_plantuml_code:
@@ -356,7 +496,7 @@ def export_diagram_puml(session: SessionState = Depends(get_session)):
 
 
 @app.get("/api/export/jira-csv")
-def export_jira_csv(session: SessionState = Depends(get_session)):
+def export_jira_csv(session: SessionState = Depends(require_session)):
     """Tải tệp CSV chuẩn Jira Issue Import."""
     with session.lock:
         if not session.facade.current_project:
@@ -370,7 +510,7 @@ def export_jira_csv(session: SessionState = Depends(get_session)):
 
 
 @app.get("/api/export/github-json")
-def export_github_json(session: SessionState = Depends(get_session)):
+def export_github_json(session: SessionState = Depends(require_session)):
     """Tải tệp JSON chuẩn GitHub Issues."""
     with session.lock:
         if not session.facade.current_project:
@@ -384,7 +524,7 @@ def export_github_json(session: SessionState = Depends(get_session)):
 
 
 @app.get("/api/export/trello-json")
-def export_trello_json(session: SessionState = Depends(get_session)):
+def export_trello_json(session: SessionState = Depends(require_session)):
     """Tải tệp JSON chuẩn Trello Board."""
     with session.lock:
         if not session.facade.current_project:
@@ -398,7 +538,7 @@ def export_trello_json(session: SessionState = Depends(get_session)):
 
 
 @app.post("/api/sync/jira")
-def sync_jira(req: JiraSyncRequest, session: SessionState = Depends(get_session)):
+def sync_jira(req: JiraSyncRequest, session: SessionState = Depends(require_session)):
     """Đồng bộ User Stories trực tiếp lên Jira Cloud REST API v3."""
     with session.lock:
         if not session.facade.current_project:
@@ -407,7 +547,7 @@ def sync_jira(req: JiraSyncRequest, session: SessionState = Depends(get_session)
 
 
 @app.post("/api/sync/github")
-def sync_github(req: GitHubSyncRequest, session: SessionState = Depends(get_session)):
+def sync_github(req: GitHubSyncRequest, session: SessionState = Depends(require_session)):
     """Đồng bộ User Stories trực tiếp lên GitHub Issues REST API."""
     with session.lock:
         if not session.facade.current_project:
@@ -416,7 +556,7 @@ def sync_github(req: GitHubSyncRequest, session: SessionState = Depends(get_sess
 
 
 @app.post("/api/sync/trello")
-def sync_trello(req: TrelloSyncRequest, session: SessionState = Depends(get_session)):
+def sync_trello(req: TrelloSyncRequest, session: SessionState = Depends(require_session)):
     """Đồng bộ User Stories trực tiếp lên Trello Board REST API."""
     with session.lock:
         if not session.facade.current_project:
