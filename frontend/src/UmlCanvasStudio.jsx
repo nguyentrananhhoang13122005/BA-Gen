@@ -1,9 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
-/**
- * Chia dòng nhãn Use Case cân đối theo chuẩn UML 2.5
- */
-function wrapUseCaseText(text, maxChars = 24) {
+function wrapUseCaseText(text, maxChars = 22) {
   const clean = (text || '').trim();
   if (clean.length <= maxChars) return [clean];
   const words = clean.split(/\s+/);
@@ -23,20 +20,14 @@ function wrapUseCaseText(text, maxChars = 24) {
   return lines.slice(0, 3);
 }
 
-/**
- * Tính bán kính Elip (rx, ry) vừa vặn với độ dài chữ bên trong
- */
 function getEllipseRadii(name) {
-  const lines = wrapUseCaseText(name, 24);
+  const lines = wrapUseCaseText(name, 22);
   const longest = Math.max(...lines.map((l) => l.length), 10);
-  const rx = Math.max(98, Math.min(142, Math.round(longest * 3.9 + 30)));
-  const ry = lines.length >= 3 ? 40 : lines.length === 2 ? 35 : 30;
+  const rx = Math.max(95, Math.min(128, Math.round(longest * 3.8 + 26)));
+  const ry = lines.length >= 3 ? 38 : lines.length === 2 ? 33 : 28;
   return { rx, ry, lines };
 }
 
-/**
- * Toán học giao điểm tia - Elip / Actor để đường nối luôn chạm đúng mép viền chuẩn StarUML / Draw.io
- */
 function computePerimeterPoints(srcNode, dstNode) {
   const dx = dstNode.x - srcNode.x;
   const dy = dstNode.y - srcNode.y;
@@ -45,8 +36,8 @@ function computePerimeterPoints(srcNode, dstNode) {
   let x1 = srcNode.x;
   let y1 = srcNode.y;
   if (srcNode.kind === 'actor') {
-    x1 = srcNode.x + Math.cos(angle) * 32;
-    y1 = srcNode.y + Math.sin(angle) * 36;
+    x1 = srcNode.x + Math.cos(angle) * 30;
+    y1 = srcNode.y + Math.sin(angle) * 34;
   } else {
     const { rx, ry } = getEllipseRadii(srcNode.name);
     x1 = srcNode.x + (rx + 2) * Math.cos(angle);
@@ -57,123 +48,184 @@ function computePerimeterPoints(srcNode, dstNode) {
   let x2 = dstNode.x;
   let y2 = dstNode.y;
   if (dstNode.kind === 'actor') {
-    x2 = dstNode.x + Math.cos(backAngle) * 32;
-    y2 = dstNode.y + Math.sin(backAngle) * 36;
+    x2 = dstNode.x + Math.cos(backAngle) * 30;
+    y2 = dstNode.y + Math.sin(backAngle) * 34;
   } else {
     const { rx, ry } = getEllipseRadii(dstNode.name);
-    x2 = dstNode.x + (rx + 4) * Math.cos(backAngle);
-    y2 = dstNode.y + (ry + 4) * Math.sin(backAngle);
+    x2 = dstNode.x + (rx + 3) * Math.cos(backAngle);
+    y2 = dstNode.y + (ry + 3) * Math.sin(backAngle);
   }
 
   return { x1, y1, x2, y2 };
 }
 
-/**
- * Làm sạch tên hệ thống hiển thị trên khung System Boundary
- */
 function cleanSystemTitle(rawTitle) {
   if (!rawTitle) return 'Hệ thống Phần mềm';
   return rawTitle
     .replace(/\.docx$|\.txt$/i, '')
     .replace(/^Topic\s+\d+\s*[—\-:]\s*/i, '')
+    .replace(/_/g, ' ')
     .trim();
 }
 
 /**
- * Khởi tạo đồ thị UML 2.5 chuẩn từ danh sách User Stories
+ * Lọc danh sách User Stories chức năng (FR), loại bỏ NFR và các câu tiêu đề trùng lặp
  */
-function buildInitialGraph(userStories = [], projectName = 'Hệ thống Phần mềm') {
+function filterFunctionalStories(userStories = [], requirements = [], actorFilter = 'core') {
+  const reqTypeMap = {};
+  requirements.forEach((r) => {
+    reqTypeMap[r.req_id] = r.req_type;
+  });
+
+  // 1. Chỉ giữ các câu Chức năng (FR) trên sơ đồ Use Case UML
+  let frStories = userStories.filter((us) => {
+    const rType = reqTypeMap[us.req_id];
+    if (rType && rType !== 'FR') return false;
+    const name = (us.puml_usecase_name || '').trim();
+    if (!name || name.length < 4) return false;
+    // Loại bỏ các nhãn là tiêu đề chương hoặc quy tắc BR-xx
+    if (/^(TỔNG QUAN|ĐỐI TƯỢNG|ĐẶC TẢ|QUY TẮC|YÊU CẦU|TÀI LIỆU|Mục tiêu chính|Phạm vi hệ thống|BR-\d+)/i.test(name)) {
+      return false;
+    }
+    return true;
+  });
+
+  if (frStories.length === 0) {
+    frStories = userStories;
+  }
+
+  // 2. Khử trùng lặp tên Use Case
+  const seenNames = new Set();
+  const deduped = [];
+  frStories.forEach((us) => {
+    const key = (us.puml_usecase_name || us.goal || '').trim().toLowerCase();
+    if (!seenNames.has(key)) {
+      seenNames.add(key);
+      deduped.push(us);
+    }
+  });
+
+  // 3. Lọc theo chế độ xem (Core <= 10 chức năng chính, hoặc theo từng Actor cụ thể)
+  if (actorFilter === 'core') {
+    // Ưu tiên các câu có mã FR-xx hoặc lấy tối đa 10 chức năng chính phân bổ đều các Actor
+    return deduped.slice(0, 10);
+  }
+  if (actorFilter !== 'all') {
+    return deduped.filter((us) => (us.role || '').trim() === actorFilter);
+  }
+  return deduped;
+}
+
+/**
+ * Xây dựng bố cục UML 2.5 Hai Bên (Dual-Side StarUML Layout):
+ * - Actor bên Trái nối vào cột Use Case bên Trái
+ * - Actor bên Phải nối vào cột Use Case bên Phải
+ * -> KHÔNG BAO GIỜ CÓ ĐƯỜNG NỐI CẮT ĐÈ LÊN HÌNH ELIP!
+ */
+function buildDualSideGraph(filteredStories = [], projectName = 'Hệ thống Phần mềm') {
+  const actorNames = Array.from(
+    new Set(filteredStories.map((u) => (u.role || 'Người dùng').trim()))
+  );
+
+  // Chia Actor sang 2 bên Trái (x = 88) và Phải (x = 932) của khung hệ thống (x = 210..810)
+  const leftActorSet = new Set();
+  const rightActorSet = new Set();
+
+  actorNames.forEach((name, idx) => {
+    if (actorNames.length === 1 || idx % 2 === 0) {
+      leftActorSet.add(name);
+    } else {
+      rightActorSet.add(name);
+    }
+  });
+
   const actorMap = new Map();
+  actorNames.forEach((name, idx) => {
+    const isLeft = leftActorSet.has(name);
+    actorMap.set(name, {
+      id: `actor_${idx + 1}`,
+      name,
+      side: isLeft ? 'left' : 'right',
+      x: isLeft ? 88 : 932,
+      y: 160,
+    });
+  });
+
   const useCases = [];
   const links = [];
+  const leftUcs = [];
+  const rightUcs = [];
 
-  userStories.forEach((us, idx) => {
-    const roleName = (us.role || 'Business Analyst').trim();
-    if (!actorMap.has(roleName)) {
-      actorMap.set(roleName, {
-        id: `actor_${actorMap.size + 1}`,
-        name: roleName,
-        x: 105,
-        y: 160 + actorMap.size * 170,
-      });
-    }
+  filteredStories.forEach((us, idx) => {
+    const roleName = (us.role || 'Người dùng').trim();
     const actor = actorMap.get(roleName);
     const ucId = `uc_${idx + 1}`;
-    const ucName = (us.puml_usecase_name || us.goal || `Use Case ${idx + 1}`).trim();
+    const ucName = (us.puml_usecase_name || us.goal || `Chức năng ${idx + 1}`).trim();
 
-    useCases.push({
+    const ucNode = {
       id: ucId,
       code: `UC-${String(idx + 1).padStart(2, '0')}`,
       name: ucName,
+      side: actor?.side || 'left',
       x: 0,
       y: 0,
-    });
+    };
 
-    links.push({
-      id: `link_assoc_${idx + 1}`,
-      from: actor.id,
-      to: ucId,
-      type: 'association',
-    });
+    useCases.push(ucNode);
+    if (ucNode.side === 'left') leftUcs.push(ucNode);
+    else rightUcs.push(ucNode);
+
+    if (actor) {
+      links.push({
+        id: `link_assoc_${idx + 1}`,
+        from: actor.id,
+        to: ucId,
+        type: 'association',
+      });
+    }
   });
 
+  // Nếu chỉ có 1 bên có Actor (ví dụ lọc theo 1 Actor), xếp 1 cột chính giữa khung hệ thống (x = 510)
+  const singleSideMode = rightUcs.length === 0;
+
+  if (singleSideMode) {
+    leftUcs.forEach((uc, i) => {
+      uc.x = 510;
+      uc.y = 120 + i * 92;
+    });
+  } else {
+    // Cột Trái (x = 365) nối thẳng với Actor Trái (x = 88)
+    leftUcs.forEach((uc, i) => {
+      uc.x = 365;
+      uc.y = 120 + i * 96;
+    });
+    // Cột Phải (x = 655) nối thẳng với Actor Phải (x = 932)
+    rightUcs.forEach((uc, i) => {
+      uc.x = 655;
+      uc.y = 120 + i * 96;
+    });
+  }
+
+  const maxRows = Math.max(leftUcs.length, rightUcs.length, 1);
+  const totalH = Math.max(120 + maxRows * 96 + 60, 440);
+
+  // Căn giữa vị trí Y của từng Actor theo đúng tâm trung bình các Use Case mà Actor đó nối tới!
   const actors = Array.from(actorMap.values());
-  const count = useCases.length;
-
-  // Bố cục 2 cột so le (Staggered Dual-Column UML Layout) để các đường nối từ Actor không bao giờ cắt đè lên Elip khác
-  useCases.forEach((uc, idx) => {
-    if (count <= 4) {
-      uc.x = 560;
-      uc.y = 125 + idx * 105;
-    } else {
-      const col = idx % 2;
-      const row = Math.floor(idx / 2);
-      uc.x = col === 0 ? 455 : 755;
-      uc.y = 120 + row * 115 + (col === 1 ? 32 : 0);
+  const placeActorsOnSide = (sideActors) => {
+    if (sideActors.length === 0) return;
+    if (sideActors.length === 1) {
+      sideActors[0].y = Math.round(totalH / 2);
+      return;
     }
-  });
-
-  // Tự động nhận diện quan hệ <<include>> / <<extend>> hợp lý giữa các Use Case liên tiếp
-  for (let i = 0; i < useCases.length - 1; i++) {
-    const cur = useCases[i].name.toLowerCase();
-    const nxt = useCases[i + 1].name.toLowerCase();
-    if (
-      (cur.includes('upload') && nxt.includes('split')) ||
-      (cur.includes('split') && nxt.includes('classify')) ||
-      (cur.includes('tải') && nxt.includes('tách')) ||
-      (cur.includes('giỏ hàng') && nxt.includes('thanh toán'))
-    ) {
-      links.push({
-        id: `link_inc_${i + 1}`,
-        from: useCases[i].id,
-        to: useCases[i + 1].id,
-        type: 'include',
-      });
-    } else if (
-      (cur.includes('classify') && nxt.includes('flag')) ||
-      (cur.includes('flag') && nxt.includes('generate'))
-    ) {
-      links.push({
-        id: `link_ext_${i + 1}`,
-        from: useCases[i + 1].id,
-        to: useCases[i].id,
-        type: 'extend',
-      });
-    }
-  }
-
-  const maxUcY = useCases.length ? Math.max(...useCases.map((u) => u.y)) : 340;
-  const totalH = Math.max(maxUcY + 115, actors.length * 165 + 110, 480);
-
-  if (actors.length === 1) {
-    actors[0].y = Math.round(totalH / 2);
-  } else if (actors.length > 1) {
-    const gap = Math.min(175, Math.max(130, (totalH - 140) / (actors.length - 1)));
-    const topY = Math.round((totalH - gap * (actors.length - 1)) / 2);
-    actors.forEach((a, i) => {
-      a.y = topY + i * gap;
+    const stepY = Math.min(180, Math.max(130, (totalH - 150) / (sideActors.length - 1)));
+    const startY = Math.round((totalH - stepY * (sideActors.length - 1)) / 2);
+    sideActors.forEach((a, i) => {
+      a.y = startY + i * stepY;
     });
-  }
+  };
+
+  placeActorsOnSide(actors.filter((a) => a.side === 'left'));
+  placeActorsOnSide(actors.filter((a) => a.side === 'right'));
 
   return {
     systemTitle: cleanSystemTitle(projectName),
@@ -183,9 +235,6 @@ function buildInitialGraph(userStories = [], projectName = 'Hệ thống Phần 
   };
 }
 
-/**
- * Sinh mã chuẩn PlantUML 2.5 từ trạng thái đồ thị
- */
 function generatePlantUmlFromGraph(graph) {
   const lines = [
     '@startuml',
@@ -238,13 +287,34 @@ function generatePlantUmlFromGraph(graph) {
 
 export default function UmlCanvasStudio({
   userStories = [],
+  requirements = [],
   projectName = 'Hệ thống Phần mềm',
   initialPlantUmlCode = '',
 }) {
-  const [graph, setGraph] = useState(() => buildInitialGraph(userStories, projectName));
-  const [selectedItem, setSelectedItem] = useState(null); // { kind: 'actor' | 'uc' | 'link', id: string }
+  // Chế độ lọc chống rối mắt: 'core' (<= 10 chức năng cốt lõi) | tên Actor | 'all'
+  const [actorFilter, setActorFilter] = useState('core');
+
+  const allFunctionalStories = useMemo(
+    () => filterFunctionalStories(userStories, requirements, 'all'),
+    [userStories, requirements]
+  );
+
+  const uniqueActors = useMemo(
+    () => Array.from(new Set(allFunctionalStories.map((u) => (u.role || 'Người dùng').trim()))),
+    [allFunctionalStories]
+  );
+
+  const visibleStories = useMemo(
+    () => filterFunctionalStories(userStories, requirements, actorFilter),
+    [userStories, requirements, actorFilter]
+  );
+
+  const [graph, setGraph] = useState(() =>
+    buildDualSideGraph(visibleStories, projectName)
+  );
+  const [selectedItem, setSelectedItem] = useState(null);
   const [dragging, setDragging] = useState(null);
-  const [connectMode, setConnectMode] = useState(null); // null | { step: 'pick-from' | 'pick-to', fromId?: string, type: 'association' | 'include' | 'extend' }
+  const [connectMode, setConnectMode] = useState(null);
   const [zoom, setZoom] = useState(1);
   const [mode, setMode] = useState('canvas');
   const [pumlText, setPumlText] = useState(initialPlantUmlCode);
@@ -253,12 +323,12 @@ export default function UmlCanvasStudio({
   const svgRef = useRef(null);
 
   useEffect(() => {
-    const nextGraph = buildInitialGraph(userStories, projectName);
+    const nextGraph = buildDualSideGraph(visibleStories, projectName);
     setGraph(nextGraph);
     setPumlText(generatePlantUmlFromGraph(nextGraph));
     setSelectedItem(null);
     setConnectMode(null);
-  }, [userStories, projectName]);
+  }, [visibleStories, projectName]);
 
   const syncToBackend = (updatedGraph) => {
     const code = generatePlantUmlFromGraph(updatedGraph);
@@ -270,11 +340,11 @@ export default function UmlCanvasStudio({
     }).catch(() => {});
   };
 
-  const canvasWidth = 980;
+  const canvasWidth = 1020;
   const canvasHeight = useMemo(() => {
-    const maxA = graph.actors.length ? Math.max(...graph.actors.map((a) => a.y)) : 300;
-    const maxU = graph.useCases.length ? Math.max(...graph.useCases.map((u) => u.y)) : 300;
-    return Math.max(maxA + 125, maxU + 115, 500);
+    const maxA = graph.actors.length ? Math.max(...graph.actors.map((a) => a.y)) : 280;
+    const maxU = graph.useCases.length ? Math.max(...graph.useCases.map((u) => u.y)) : 280;
+    return Math.max(maxA + 110, maxU + 95, 440);
   }, [graph]);
 
   const getSvgCoords = (clientX, clientY) => {
@@ -287,11 +357,9 @@ export default function UmlCanvasStudio({
     };
   };
 
-  // Xử lý click / kéo nút trên bản vẽ
   const handlePointerDownNode = (e, kind, item) => {
     e.stopPropagation();
 
-    // Nếu đang ở chế độ Kẻ Đường Nối Trực Tiếp
     if (connectMode) {
       if (connectMode.step === 'pick-from') {
         setConnectMode({ ...connectMode, step: 'pick-to', fromId: item.id });
@@ -335,14 +403,10 @@ export default function UmlCanvasStudio({
   const handlePointerMoveCanvas = (e) => {
     if (!dragging) return;
     const pt = getSvgCoords(e.clientX, e.clientY);
-    // Snap-to-grid 8px cho bản vẽ thẳng hàng sắc nét
-    const rawX = pt.x - dragging.offsetX;
-    const rawY = pt.y - dragging.offsetY;
-    const snappedX = Math.round(rawX / 8) * 8;
-    const snappedY = Math.round(rawY / 8) * 8;
-
-    const nextX = Math.max(70, Math.min(canvasWidth - 110, snappedX));
-    const nextY = Math.max(85, Math.min(canvasHeight - 65, snappedY));
+    const snappedX = Math.round((pt.x - dragging.offsetX) / 8) * 8;
+    const snappedY = Math.round((pt.y - dragging.offsetY) / 8) * 8;
+    const nextX = Math.max(65, Math.min(canvasWidth - 65, snappedX));
+    const nextY = Math.max(85, Math.min(canvasHeight - 60, snappedY));
 
     setGraph((prev) => {
       if (dragging.kind === 'actor') {
@@ -371,11 +435,13 @@ export default function UmlCanvasStudio({
 
   const handleAddActor = () => {
     const idx = graph.actors.length + 1;
+    const isLeft = idx % 2 === 1;
     const newActor = {
       id: `actor_${Date.now()}`,
-      name: `Actor ${idx}`,
-      x: 105,
-      y: Math.min(canvasHeight - 80, 140 + (idx - 1) * 140),
+      name: `Actor mới ${idx}`,
+      side: isLeft ? 'left' : 'right',
+      x: isLeft ? 88 : 932,
+      y: Math.round(canvasHeight / 2),
     };
     const nextGraph = { ...graph, actors: [...graph.actors, newActor] };
     setGraph(nextGraph);
@@ -389,9 +455,10 @@ export default function UmlCanvasStudio({
     const newUc = {
       id: `uc_${Date.now()}`,
       code: `UC-${String(idx).padStart(2, '0')}`,
-      name: `New Use Case ${idx}`,
-      x: idx % 2 === 1 ? 460 : 755,
-      y: 125 + Math.floor((idx - 1) / 2) * 110,
+      name: `Chức năng mới ${idx}`,
+      side: 'left',
+      x: 510,
+      y: Math.min(canvasHeight - 80, 120 + (idx - 1) * 85),
     };
     const nextLinks = firstActor
       ? [
@@ -462,7 +529,7 @@ export default function UmlCanvasStudio({
   };
 
   const handleResetLayout = () => {
-    const fresh = buildInitialGraph(userStories, projectName);
+    const fresh = buildDualSideGraph(visibleStories, projectName);
     setGraph(fresh);
     setSelectedItem(null);
     setConnectMode(null);
@@ -554,10 +621,10 @@ export default function UmlCanvasStudio({
       >
         <div>
           <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0F172A' }}>
-            Trình Vẽ Sơ đồ UML 2.5 Use Case Tương tác (Chuẩn StarUML / Draw.io)
+            Sơ đồ Chức năng UML 2.5 Tương tác (Bố cục 2 bên không cắt chéo dây)
           </h3>
           <p style={{ fontSize: '0.84rem', color: '#64748B' }}>
-            Kéo-thả các phần tử, bấm vào bất kỳ hình hoặc đường nối nào để chỉnh sửa trực tiếp trên bản vẽ
+            Lọc xem theo từng nhóm Người dùng (Actor) bên dưới để sơ đồ luôn thoáng đãng, hoặc kéo-thả trực tiếp bằng chuột
           </p>
         </div>
 
@@ -581,7 +648,62 @@ export default function UmlCanvasStudio({
 
       {mode === 'canvas' && (
         <div>
-          {/* TOOLBAR: ADD NODES, DRAW ARROWS ON CANVAS, AUTO-LAYOUT, EXPORT */}
+          {/* ACTOR / SUB-DIAGRAM FILTER BAR (CHỐNG RỐI MẮT KHI TÀI LIỆU DÀI) */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              flexWrap: 'wrap',
+              marginBottom: '12px',
+              padding: '10px 14px',
+              background: '#EFF6FF',
+              border: '1px solid #BFDBFE',
+              borderRadius: '10px',
+            }}
+          >
+            <span style={{ fontSize: '0.83rem', fontWeight: 700, color: '#1E3A8A' }}>
+              Chế độ hiển thị sơ đồ:
+            </span>
+            <button
+              type="button"
+              className={`filter-tab ${actorFilter === 'core' ? 'active' : ''}`}
+              style={{ padding: '5px 12px', fontSize: '0.8rem' }}
+              onClick={() => setActorFilter('core')}
+            >
+              ★ Tóm tắt Cốt lõi ({Math.min(allFunctionalStories.length, 10)} chức năng chính)
+            </button>
+
+            {uniqueActors.map((actName) => {
+              const cnt = allFunctionalStories.filter(
+                (u) => (u.role || 'Người dùng').trim() === actName
+              ).length;
+              return (
+                <button
+                  key={actName}
+                  type="button"
+                  className={`filter-tab ${actorFilter === actName ? 'active' : ''}`}
+                  style={{ padding: '5px 12px', fontSize: '0.8rem' }}
+                  onClick={() => setActorFilter(actName)}
+                >
+                  Theo: {actName} ({cnt})
+                </button>
+              );
+            })}
+
+            {allFunctionalStories.length > 10 && (
+              <button
+                type="button"
+                className={`filter-tab ${actorFilter === 'all' ? 'active' : ''}`}
+                style={{ padding: '5px 12px', fontSize: '0.8rem' }}
+                onClick={() => setActorFilter('all')}
+              >
+                Tất cả ({allFunctionalStories.length})
+              </button>
+            )}
+          </div>
+
+          {/* DRAWING & EXPORT TOOLBAR */}
           <div
             style={{
               display: 'flex',
@@ -613,8 +735,6 @@ export default function UmlCanvasStudio({
               >
                 + Thêm Use Case
               </button>
-
-              {/* NÚT KẺ ĐƯỜNG NỐI TRỰC TIẾP TRÊN HÌNH */}
               <button
                 type="button"
                 className={`btn ${connectMode ? 'btn-primary' : 'btn-outline'}`}
@@ -625,13 +745,11 @@ export default function UmlCanvasStudio({
                 }}
                 onClick={() =>
                   setConnectMode(
-                    connectMode
-                      ? null
-                      : { step: 'pick-from', type: 'association' }
+                    connectMode ? null : { step: 'pick-from', type: 'association' }
                   )
                 }
               >
-                {connectMode ? '✕ Hủy kẻ đường nối' : '⎯ Nối dây trực tiếp trên hình'}
+                {connectMode ? '✕ Hủy kẻ đường nối' : '⎯ Nối dây trên hình'}
               </button>
 
               {connectMode && (
@@ -653,7 +771,7 @@ export default function UmlCanvasStudio({
                 style={{ padding: '7px 12px', fontSize: '0.82rem', background: '#FFFFFF' }}
                 onClick={handleResetLayout}
               >
-                Căn chỉnh lại bố cục
+                Căn chỉnh lại
               </button>
             </div>
 
@@ -696,7 +814,6 @@ export default function UmlCanvasStudio({
             </div>
           </div>
 
-          {/* HƯỚNG DẪN KHI ĐANG BẬT CHẾ ĐỘ KẺ ĐƯỜNG NỐI TRỰC TIẾP */}
           {connectMode && (
             <div
               style={{
@@ -711,12 +828,11 @@ export default function UmlCanvasStudio({
               }}
             >
               {connectMode.step === 'pick-from'
-                ? '👉 Bước 1: Hãy bấm chuột vào hình Bắt đầu (Actor hoặc Use Case) ngay trên bản vẽ bên dưới...'
-                : '👉 Bước 2: Bây giờ hãy bấm chuột vào hình Use Case Đích để hoàn tất nối dây!'}
+                ? '👉 Bước 1: Bấm chuột vào hình Bắt đầu (Actor hoặc Use Case) trên bản vẽ...'
+                : '👉 Bước 2: Bấm chuột vào hình Use Case Đích để hoàn tất nối dây!'}
             </div>
           )}
 
-          {/* THANH CHỈNH SỬA PHẦN TỬ ĐANG CHỌN (NODE HOẶC ĐƯỜNG NỐI) */}
           {selectedItem && activeNodeObj && (
             <div
               style={{
@@ -788,7 +904,7 @@ export default function UmlCanvasStudio({
             </div>
           )}
 
-          {/* BẢNG VẼ VECTOR UML 2.5 CHUẨN KỸ THUẬT */}
+          {/* DUAL-SIDE STARUML CANVAS (ACTORS ON LEFT & RIGHT, SYSTEM IN CENTER) */}
           <div
             style={{
               background: '#F1F5F9',
@@ -819,7 +935,6 @@ export default function UmlCanvasStudio({
               onClick={() => setSelectedItem(null)}
             >
               <defs>
-                {/* Mũi tên mở chuẩn UML 2.5 cho <<include>> & <<extend>> */}
                 <marker
                   id="uml-open-arrow"
                   viewBox="0 0 12 12"
@@ -839,7 +954,6 @@ export default function UmlCanvasStudio({
                   />
                 </marker>
 
-                {/* Bóng đổ nhẹ chuẩn StarUML cho Elip Use Case */}
                 <filter id="uml-drop-shadow" x="-10%" y="-10%" width="125%" height="125%">
                   <feDropShadow dx="1" dy="2" stdDeviation="2" floodColor="#0F172A" floodOpacity="0.08" />
                 </filter>
@@ -855,29 +969,28 @@ export default function UmlCanvasStudio({
                 </linearGradient>
               </defs>
 
-              {/* KHUNG SYSTEM BOUNDARY CHUẨN UML 2.5 */}
+              {/* CENTERED SYSTEM BOUNDARY BOX (x = 205..815, leaving clean gutters for Left Actors at x=88 and Right Actors at x=932) */}
               <rect
-                x="255"
-                y="28"
-                width="695"
-                height={canvasHeight - 56}
+                x="205"
+                y="26"
+                width="610"
+                height={canvasHeight - 52}
                 rx="4"
                 fill="#FAFAFC"
                 stroke="#1E293B"
                 strokeWidth="1.8"
               />
-              {/* Thanh tiêu đề khung hệ thống chuẩn UML */}
               <line
-                x1="255"
-                y1="66"
-                x2="950"
-                y2="66"
+                x1="205"
+                y1="64"
+                x2="815"
+                y2="64"
                 stroke="#CBD5E1"
                 strokeWidth="1.2"
               />
               <text
-                x="602"
-                y="45"
+                x="510"
+                y="43"
                 textAnchor="middle"
                 fill="#64748B"
                 fontFamily="JetBrains Mono, monospace"
@@ -886,8 +999,8 @@ export default function UmlCanvasStudio({
                 «system»
               </text>
               <text
-                x="602"
-                y="60"
+                x="510"
+                y="58"
                 textAnchor="middle"
                 fill="#0F172A"
                 fontFamily="Be Vietnam Pro, Segoe UI, sans-serif"
@@ -897,7 +1010,7 @@ export default function UmlCanvasStudio({
                 {graph.systemTitle}
               </text>
 
-              {/* VẼ CÁC ĐƯỜNG NỐI QUAN HỆ (TÍNH GIAO ĐIỂM VIỀN CHÍNH XÁC) */}
+              {/* RELATIONSHIPS */}
               {graph.links.map((lnk) => {
                 const src = nodeMap[lnk.from];
                 const dst = nodeMap[lnk.to];
@@ -919,7 +1032,6 @@ export default function UmlCanvasStudio({
                       setSelectedItem({ kind: 'link', id: lnk.id });
                     }}
                   >
-                    {/* Vùng đệm trong suốt giúp click chọn đường nối dễ dàng */}
                     <line
                       x1={x1}
                       y1={y1}
@@ -967,12 +1079,12 @@ export default function UmlCanvasStudio({
                 );
               })}
 
-              {/* VẼ TÁC NHÂN (TEXTBOOK UML 2.5 STICK FIGURE ACTOR) */}
+              {/* ACTORS (LEFT AND RIGHT SIDES) */}
               {graph.actors.map((actor) => {
                 const isSel =
                   (selectedItem?.kind === 'actor' && selectedItem?.id === actor.id) ||
                   connectMode?.fromId === actor.id;
-                const actorLines = wrapUseCaseText(actor.name, 20);
+                const actorLines = wrapUseCaseText(actor.name, 16);
 
                 return (
                   <g
@@ -995,8 +1107,6 @@ export default function UmlCanvasStudio({
                         strokeDasharray="4 3"
                       />
                     )}
-
-                    {/* Đầu hình người chuẩn UML */}
                     <circle
                       cx="0"
                       cy="-22"
@@ -1005,24 +1115,20 @@ export default function UmlCanvasStudio({
                       stroke="#0F172A"
                       strokeWidth="2"
                     />
-                    {/* Thân */}
                     <line x1="0" y1="-11.5" x2="0" y2="12" stroke="#0F172A" strokeWidth="2" />
-                    {/* Hai tay ngang */}
                     <line x1="-16" y1="-2" x2="16" y2="-2" stroke="#0F172A" strokeWidth="2" />
-                    {/* Hai chân */}
                     <line x1="0" y1="12" x2="-13" y2="31" stroke="#0F172A" strokeWidth="2" />
                     <line x1="0" y1="12" x2="13" y2="31" stroke="#0F172A" strokeWidth="2" />
 
-                    {/* Nhãn tên Actor chuẩn sách giáo khoa UML bên dưới chân */}
                     {actorLines.map((ln, idx) => (
                       <text
                         key={idx}
                         x="0"
-                        y={48 + idx * 15}
+                        y={48 + idx * 14}
                         textAnchor="middle"
                         fill="#0F172A"
                         fontFamily="Be Vietnam Pro, Segoe UI, sans-serif"
-                        fontSize="12.5"
+                        fontSize="12"
                         fontWeight="700"
                       >
                         {ln}
@@ -1032,13 +1138,13 @@ export default function UmlCanvasStudio({
                 );
               })}
 
-              {/* VẼ CA SỬ DỤNG (AUTO-SIZED TEXTBOOK UML 2.5 USE CASE ELLIPSES) */}
+              {/* USE CASES */}
               {graph.useCases.map((uc) => {
                 const isSel =
                   (selectedItem?.kind === 'uc' && selectedItem?.id === uc.id) ||
                   connectMode?.fromId === uc.id;
                 const { rx, ry, lines } = getEllipseRadii(uc.name);
-                const startTextY = -((lines.length - 1) * 15) / 2 + 4;
+                const startTextY = -((lines.length - 1) * 14.5) / 2 + 4;
 
                 return (
                   <g
@@ -1058,16 +1164,15 @@ export default function UmlCanvasStudio({
                       strokeWidth={isSel ? '2.4' : '1.75'}
                       filter="url(#uml-drop-shadow)"
                     />
-
                     {lines.map((ln, idx) => (
                       <text
                         key={idx}
                         x="0"
-                        y={startTextY + idx * 15}
+                        y={startTextY + idx * 14.5}
                         textAnchor="middle"
                         fill="#0F172A"
                         fontFamily="Be Vietnam Pro, Segoe UI, sans-serif"
-                        fontSize="12.2"
+                        fontSize="12"
                         fontWeight="600"
                       >
                         {ln}
@@ -1081,7 +1186,6 @@ export default function UmlCanvasStudio({
         </div>
       )}
 
-      {/* TAB 2: PLANTUML SOURCE CODE */}
       {mode === 'code' && (
         <div>
           <textarea

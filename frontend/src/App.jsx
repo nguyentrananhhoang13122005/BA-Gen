@@ -1209,6 +1209,7 @@ export default function App() {
               <div ref={listContainerRef}>
                 <UmlCanvasStudio
                   userStories={result.user_stories}
+                  requirements={result.requirements}
                   projectName={result.project?.project_name || 'Hệ thống Phần mềm'}
                   initialPlantUmlCode={result.plantuml_code}
                   hasKrokiImage={result.has_diagram_image}

@@ -118,8 +118,20 @@ class RequirementSegmenter:
                 return match.group(0).replace(".", "__ABBREV_DOT__")
             protected_text = re.sub(abbrev, replace_abbrev, protected_text, flags=re.IGNORECASE)
 
-        # 3. Tách theo dấu kết thúc câu (. ! ? ;) hoặc xuống dòng (\n+)
-        sentences = re.split(r"(?<=[.!?;])\s+|\n+", protected_text)
+        # 3. Tách theo dấu kết thúc câu (. ! ?) hoặc xuống dòng (\n+)
+        # Lưu ý: giữ dấu chấm phẩy (;) để không cắt vụn 1 dòng bảng biểu thành nhiều mảnh rời rạc
+        sentences = re.split(r"(?<=[.!?])\s+|\n+", protected_text)
+
+        non_req_heading_pattern = re.compile(
+            r"^(Topic\s+\d+\s*[—\-:]|Related\s+topics\s*:|"
+            r"TÀI\s+LIỆU\s+PHÂN\s+TÍCH\s+NGHIỆP\s+VỤ|HỆ\s+THỐNG\s+QUẢN\s+LÝ\s+|"
+            r"TỔNG\s+QUAN\s+DỰ\s+ÁN|ĐỐI\s+TƯỢNG\s+SỬ\s+DỤNG\s*&\s*PHÂN\s+QUYỀN|"
+            r"ĐẶC\s+TẢ\s+YÊU\s+CẦU\s+CHỨC\s+NĂNG|QUY\s+TẮC\s+NGHIỆP\s+VỤ\s+CỐT\s+LÕI|"
+            r"YÊU\s+CẦU\s+PHI\s+CHỨC\s+NĂNG|Mục\s+tiêu\s+chính\s*\(|"
+            r"Phạm\s+vi\s+hệ\s+thống\s*\(|Ngoài\s+phạm\s+vi\s*\(Out-of-Scope\)|"
+            r"Phiên\s+bản\s*:\s*\d|Vai\s+trò\s*\(Role\)\s*[—\-]|Mã\s+FR\s*[—\-])",
+            flags=re.IGNORECASE,
+        )
 
         candidate_requirements = []
         for s in sentences:
@@ -129,8 +141,12 @@ class RequirementSegmenter:
             if not restored:
                 continue
 
-            # Bỏ qua dòng tiêu đề đề bài hoặc dòng chủ đề liên quan không phải yêu cầu
-            if re.match(r"^(Topic\s+\d+\s*[—\-:]|Related\s+topics\s*:)", restored, flags=re.IGNORECASE):
+            # Bỏ qua dòng tiêu đề tài liệu, tiêu đề chương mục, metadata hoặc phạm vi loại trừ
+            if non_req_heading_pattern.match(restored):
+                continue
+
+            # Bỏ qua dòng toàn chữ IN HOA ngắn (tiêu đề chương mục trong Word)
+            if restored.isupper() and len(restored.split()) <= 12:
                 continue
 
             # Cắt bỏ nhãn mở đầu đoạn như "Objective:", "Problem description:", "Mục tiêu:"

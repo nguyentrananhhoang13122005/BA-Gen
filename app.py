@@ -676,7 +676,10 @@ def serve_react_spa(full_path: str):
         return FileResponse(served_file)
     index_path = os.path.join(FRONTEND_DIST, "index.html")
     if os.path.isfile(index_path):
-        return FileResponse(index_path)
+        return FileResponse(
+            index_path,
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+        )
     return {"message": "BA-Gen API Server is running. Build frontend into frontend/dist to view UI."}
 
 

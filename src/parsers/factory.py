@@ -81,12 +81,40 @@ class DocxDocumentParser(IDocumentParser):
                 extracted_lines.append(text)
 
         # 2. Đọc nội dung từ các bảng biểu (tables)
+        table_header_markers = {
+            "mã fr", "mô tả yêu cầu chi tiết", "độ ưu tiên",
+            "vai trò (role)", "mô tả & phạm vi quyền hạn chính",
+            "stt", "requirement id", "priority",
+        }
+        priority_suffixes = {
+            "cao (high)", "trung bình (medium)", "thấp (low)",
+            "high", "medium", "low", "cao", "trung bình", "thấp",
+        }
+
         for table in doc.tables:
             for row in table.rows:
-                row_texts = [cell.text.strip() for cell in row.cells if cell.text.strip()]
-                if row_texts:
-                    # Gộp các ô trong cùng dòng thành một câu mô tả yêu cầu
-                    extracted_lines.append(" - ".join(dict.fromkeys(row_texts)))
+                # Làm phẳng dấu xuống dòng (\n) bên trong từng ô của bảng thành khoảng trắng
+                row_texts = [
+                    " ".join(cell.text.split())
+                    for cell in row.cells
+                    if cell.text and cell.text.strip()
+                ]
+                unique_cells = list(dict.fromkeys(row_texts))
+                if not unique_cells:
+                    continue
+
+                # Bỏ qua dòng tiêu đề bảng (Table Header Row)
+                joined_lower = " | ".join(unique_cells).lower()
+                if sum(1 for m in table_header_markers if m in joined_lower) >= 2:
+                    continue
+
+                # Bỏ cột Độ ưu tiên ở cuối dòng bảng nếu có
+                if len(unique_cells) >= 3 and unique_cells[-1].lower() in priority_suffixes:
+                    unique_cells = unique_cells[:-1]
+
+                # Giữ toàn bộ dòng bảng là 1 yêu cầu hoàn chỉnh (ngăn việc tách rời từng câu nhỏ trong cùng 1 ô)
+                merged_row = " — ".join(unique_cells).replace(". ", "; ")
+                extracted_lines.append(merged_row)
 
         full_text = "\n".join(extracted_lines)
         return unicodedata.normalize("NFC", full_text.strip())

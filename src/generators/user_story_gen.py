@@ -101,33 +101,63 @@ class UserStoryGenerator:
     @staticmethod
     def _build_clean_usecase_name(goal: str, lang: str = "vi") -> str:
         """Trích xuất tên Ca sử dụng (Use Case) ngắn gọn, chuẩn Động từ + Tân ngữ cho sơ đồ UML."""
-        # 1. Xóa các cụm giải thích trong ngoặc đơn (VD: "(for example ...)", "(in English or Vietnamese)")
-        cleaned = re.sub(r"\([^)]*\)", "", goal).strip()
+        raw = goal.strip()
 
-        # 2. Nếu câu có dấu hai chấm (VD: "Build a tool that helps BAs: it reads..."), lấy vế hành động chính
+        # 1. Nếu là dòng bảng đặc tả có dạng "FR-01 — Tên Phân hệ — Mô tả..."
+        fr_table_match = re.match(
+            r"^(?:Hệ thống / Người dùng thực hiện:\s*)?(?:FR-\d+)\s*[—\-:]\s*([^—\-:]+?)(?:\s*[—\-:]\s*(.+))?$",
+            raw,
+            flags=re.IGNORECASE,
+        )
+        if fr_table_match:
+            module_name = re.sub(r"\([^)]*\)", "", fr_table_match.group(1)).strip()
+            if module_name:
+                if not re.match(r"^(Quản lý|Thiết lập|Xử lý|Xem|Tạo|Tính)\b", module_name, flags=re.IGNORECASE):
+                    return f"Quản lý {module_name}"
+                return module_name
+
+        # 2. Nếu là dòng định nghĩa Vai trò trong bảng Stakeholder ("Quản trị viên hệ thống (System Admin) — Cấu hình...")
+        role_table_match = re.match(
+            r"^(Quản trị viên hệ thống|Chuyên viên Nhân sự|Quản lý trực tiếp|Nhân viên)\s*(?:\([^)]*\))?\s*[—\-:]\s*(.+)$",
+            raw,
+            flags=re.IGNORECASE,
+        )
+        if role_table_match:
+            raw = role_table_match.group(2).strip()
+
+        # 3. Xóa các cụm giải thích trong ngoặc đơn (VD: "(for example ...)", "(Core HR)")
+        cleaned = re.sub(r"\([^)]*\)", "", raw).strip()
+
+        # 4. Nếu câu có dấu hai chấm (VD: "Tập trung hóa dữ liệu: Lưu trữ hồ sơ nhân viên..."), lấy vế hành động sau dấu :
         if ":" in cleaned:
             after_colon = cleaned.split(":", 1)[1].strip()
             if len(after_colon.split()) >= 3:
                 cleaned = after_colon
 
-        # Nếu câu có liên từ nối vế phụ dài ("and automatically..."), chỉ giữ cụm động từ + tân ngữ chính cho nhãn Elip
+        # Nếu câu có dấu chấm phẩy (;), chỉ lấy mệnh đề hành động đầu tiên cho tên Use Case ngắn gọn
+        if ";" in cleaned:
+            cleaned = cleaned.split(";", 1)[0].strip()
+
+        # Nếu câu có liên từ nối vế phụ dài ("and automatically..."), chỉ giữ cụm động từ + tân ngữ chính
         cleaned = re.split(r"\s+and\s+automatically\s+", cleaned, maxsplit=1, flags=re.IGNORECASE)[0].strip()
 
-        # 3. Cắt bỏ các chủ ngữ/cụm dẫn nhập đầu câu
+        # 5. Cắt bỏ các chủ ngữ/cụm dẫn nhập đầu câu
         cleaned = re.sub(
             r"^(it\s+|the\s+system\s+shall\s+|the\s+system\s+must\s+|the\s+system\s+|"
             r"the\s+application\s+|the\s+tool\s+|users?\s+can\s+|users?\s+|"
             r"build\s+a\s+tool\s+that\s+helps\s+[^:]+?\s+to\s+|"
+            r"hệ\s+thống\s+/\s+người\s+dùng\s+thực\s+hiện\s*:\s*|"
             r"hệ\s+thống\s+phải\s+cho\s+phép\s+|hệ\s+thống\s+cho\s+phép\s+|"
             r"hệ\s+thống\s+phải\s+|hệ\s+thống\s+|ứng\s+dụng\s+phải\s+hỗ\s+trợ\s+|"
-            r"ứng\s+dụng\s+|người\s+dùng\s+có\s+thể\s+|khách\s+hàng\s+có\s+thể\s+|"
+            r"ứng\s+dụng\s+|cho\s+phép\s+nhân\s+viên\s+chủ\s+động\s+|cho\s+phép\s+|"
+            r"người\s+dùng\s+có\s+thể\s+|khách\s+hàng\s+có\s+thể\s+|nhân\s+viên\s+|"
             r"automatically\s+)",
             "",
             cleaned,
             flags=re.IGNORECASE,
-        ).strip(" ,.;")
+        ).strip(" ,.;—-")
 
-        # 4. Chuyển động từ tiếng Anh ngôi thứ 3 số ít ở đầu câu về nguyên mẫu chuẩn UML (Splits -> Split)
+        # 6. Chuyển động từ tiếng Anh ngôi thứ 3 số ít ở đầu câu về nguyên mẫu chuẩn UML
         en_verb_map = {
             "splits": "Split",
             "classifies": "Classify",
@@ -149,69 +179,72 @@ class UserStoryGenerator:
             if first_low in en_verb_map:
                 words[0] = en_verb_map[first_low]
 
-        # 5. Giới hạn tối đa 7 từ nhưng TUYỆT ĐỐI không dừng ở giới từ / liên từ cụt nghĩa
+        # 7. Giới hạn tối đa 6 từ cho nhãn Elip gọn đẹp nhưng KHÔNG kết thúc ở từ nối cụt nghĩa
         dangling_words = {
             "into", "to", "for", "with", "and", "or", "the", "a", "an", "of", "in", "by", "as", "that",
             "vào", "cho", "của", "và", "hoặc", "với", "để", "các", "những", "một", "trong", "bằng",
+            "trên", "theo", "từ", "khi", "về",
         }
-        if len(words) > 7:
-            words = words[:7]
+        max_w = 6 if lang == "vi" else 7
+        if len(words) > max_w:
+            words = words[:max_w]
             while len(words) > 2 and words[-1].lower().rstrip(",.") in dangling_words:
                 words.pop()
 
-        result = " ".join(words).strip(" ,.;")
+        result = " ".join(words).strip(" ,.;—-")
         if not result:
-            result = goal[:36].strip()
+            result = goal[:32].strip()
         return result[0].upper() + result[1:]
 
     def _extract_story_from_text(self, req: RequirementDTO, story_id: str, lang: str = "vi") -> UserStoryDTO:
         """Bóc tách trực tiếp chủ ngữ, vị ngữ và đối tượng từ câu yêu cầu thực tế."""
         text = req.raw_text.strip().rstrip(".")
 
-        # Loại bỏ các cụm từ ghép dễ gây nhận nhầm Actor như "user-friendly", "user stories", "user interface"
+        # Loại bỏ các cụm từ ghép dễ gây nhận nhầm Actor (VD: "Hệ thống Quản lý", "Quản lý hồ sơ", "user-friendly")
         actor_scan_text = re.sub(
-            r"\buser[-\s](friendly|stories|story|interface|experience|guide|manual)\b",
+            r"\b(user[-\s](friendly|stories|story|interface|experience|guide|manual)|"
+            r"hệ\s+thống\s+quản\s+lý|quản\s+lý\s+(hồ\s+sơ|nhân\s+sự|nhân\s+viên|ca\s+làm|nghỉ\s+phép|"
+            r"hợp\s+đồng|tài\s+khoản|đơn\s+hàng|sản\s+phẩm|kho))\b",
             "",
             text,
             flags=re.IGNORECASE,
         )
 
-        # Trích xuất chủ thể thực tế có trong câu
+        # Trích xuất chủ thể thực tế có trong câu (Ưu tiên cụm đầy đủ trước)
         actor_match = re.search(
-            r"\b(business\s+analysts?|requirements\s+engineers?|khách\s+hàng|người\s+mua|"
-            r"người\s+bán|người\s+dùng|quản\s+trị\s+viên|nhân\s+viên|học\s+viên|giảng\s+viên|"
-            r"bác\s+sĩ|bệnh\s+nhân|kế\s+toán|quản\s+lý|customers?|admins?|managers?|"
-            r"buyers?|sellers?|students?|users?)\b",
+            r"\b(quản\s+trị\s+viên\s+hệ\s+thống|quản\s+trị\s+viên|system\s+admin|"
+            r"chuyên\s+viên\s+nhân\s+sự|bộ\s+phận\s+c&b|nhân\s+sự\s+thuộc\s+bộ\s+phận\s+c&b|hr\s*/\s*c&b|\bhr\b|"
+            r"quản\s+lý\s+trực\s+tiếp|người\s+quản\s+lý|cấp\s+quản\s+lý|line\s+manager|quản\s+lý\s+duyệt|"
+            r"business\s+analysts?|requirements\s+engineers?|"
+            r"khách\s+hàng|người\s+mua|người\s+bán|nhân\s+viên|employee|"
+            r"học\s+viên|giảng\s+viên|bác\s+sĩ|bệnh\s+nhân|kế\s+toán|"
+            r"customers?|admins?|managers?|buyers?|sellers?|students?|users?|người\s+dùng)\b",
             actor_scan_text,
             flags=re.IGNORECASE,
         )
 
-        actor_norm_map = {
-            "business analysts": "Business Analyst",
-            "business analyst": "Business Analyst",
-            "requirements engineers": "Requirements Engineer",
-            "requirements engineer": "Requirements Engineer",
-            "users": "User (Business Analyst)",
-            "user": "User (Business Analyst)",
-            "customers": "Customer",
-            "customer": "Customer",
-            "admins": "Administrator",
-            "admin": "Administrator",
-            "managers": "Manager",
-            "manager": "Manager",
-        }
-
         if actor_match:
-            raw_actor = " ".join(actor_match.group(1).split())
-            low_actor = raw_actor.lower()
-            if low_actor in actor_norm_map:
-                role = actor_norm_map[low_actor]
+            low_actor = " ".join(actor_match.group(1).split()).lower()
+            if low_actor in ("quản trị viên hệ thống", "quản trị viên", "system admin", "admin", "admins"):
+                role = "Quản trị viên hệ thống" if lang == "vi" else "System Administrator"
+            elif low_actor in ("chuyên viên nhân sự", "bộ phận c&b", "nhân sự thuộc bộ phận c&b", "hr / c&b", "hr"):
+                role = "Chuyên viên Nhân sự (HR)"
+            elif low_actor in ("quản lý trực tiếp", "người quản lý", "cấp quản lý", "line manager", "quản lý duyệt", "manager", "managers"):
+                role = "Quản lý trực tiếp" if lang == "vi" else "Line Manager"
+            elif low_actor in ("nhân viên", "employee"):
+                role = "Nhân viên" if lang == "vi" else "Employee"
+            elif low_actor in ("business analysts", "business analyst", "requirements engineers", "requirements engineer"):
+                role = "Business Analyst"
+            elif low_actor in ("users", "user", "người dùng"):
+                role = "Người dùng" if lang == "vi" else "Business Analyst"
+            elif low_actor in ("khách hàng", "người mua", "customer", "customers", "buyer", "buyers"):
+                role = "Khách hàng" if lang == "vi" else "Customer"
             else:
-                role = raw_actor[0].upper() + raw_actor[1:]
+                role = low_actor[0].upper() + low_actor[1:]
         elif req.req_type == "NFR":
-            role = "Quản trị viên Hệ thống" if lang == "vi" else "System Administrator"
+            role = "Quản trị viên hệ thống" if lang == "vi" else "System Administrator"
         else:
-            role = "Người dùng" if lang == "vi" else "User (Business Analyst)"
+            role = "Nhân viên" if lang == "vi" else "Business Analyst"
 
         clean_goal = re.sub(
             r"^(Hệ thống phải cho phép|Hệ thống cho phép|Ứng dụng phải hỗ trợ|Hệ thống hỗ trợ|"
@@ -222,12 +255,8 @@ class UserStoryGenerator:
             flags=re.IGNORECASE,
         ).strip()
 
-        if actor_match and clean_goal.lower().startswith(actor_match.group(1).lower()):
-            clean_goal = clean_goal[len(actor_match.group(1)):].strip()
-            clean_goal = re.sub(r"^(có thể|được phép|cần|phải|can|shall|must)\s+", "", clean_goal, flags=re.IGNORECASE)
-
         goal = clean_goal if clean_goal else text
-        uc_name = self._build_clean_usecase_name(goal, lang=lang)
+        uc_name = self._build_clean_usecase_name(text, lang=lang)
 
         if lang == "vi":
             benefit = f"đảm bảo thực thi đúng yêu cầu: {text}"
