@@ -63,6 +63,39 @@ class RequirementSegmenter:
         return "\n".join(cleaned_lines)
 
     @classmethod
+    def _expand_compound_clauses(cls, sentence: str) -> List[str]:
+        """Tách câu ghép liệt kê nhiều hành động của hệ thống thành các câu yêu cầu nguyên tử."""
+        # Ví dụ: "The system splits the text into requirements, classifies them as..., flags..., and generates..."
+        en_match = re.match(
+            r"^(The\s+system|The\s+application|The\s+tool|Users?)\s+(.+)$",
+            sentence.rstrip(".!?"),
+            flags=re.IGNORECASE,
+        )
+        if en_match:
+            subject = en_match.group(1)
+            predicate = en_match.group(2)
+            # Tách tại dấu phẩy theo sau bởi động từ ngôi thứ 3 số ít phổ biến trong đặc tả
+            parts = re.split(
+                r",\s*(?:and\s+)?(?=(?:splits|classifies|flags|detects|generates|exports|validates|"
+                r"stores|sends|allows|supports|provides|analyzes|reads|creates|updates|deletes)\b)",
+                predicate,
+                flags=re.IGNORECASE,
+            )
+            if len(parts) > 1:
+                expanded = []
+                for idx, part in enumerate(parts):
+                    clean_part = part.strip().rstrip(",.")
+                    # Thay đại từ "them" bằng danh từ "requirements" để câu đơn độc lập rõ nghĩa
+                    clean_part = re.sub(r"\bclassifies\s+them\b", "classifies requirements", clean_part, flags=re.IGNORECASE)
+                    if idx == 0:
+                        expanded.append(f"{subject} {clean_part}.")
+                    else:
+                        subj_norm = "The system" if subject.lower().startswith("the") else subject
+                        expanded.append(f"{subj_norm} {clean_part}.")
+                return expanded
+        return [sentence]
+
+    @classmethod
     def segment(cls, raw_text: str) -> Tuple[List[str], str]:
         """Tách chuỗi văn bản thành danh sách các câu yêu cầu nguyên tử.
 
@@ -115,6 +148,8 @@ class RequirementSegmenter:
                 formatted = restored[0].upper() + restored[1:]
                 if not formatted.endswith((".", "!", "?")):
                     formatted += "."
-                candidate_requirements.append(formatted)
+                for atomic in cls._expand_compound_clauses(formatted):
+                    if len(atomic.split()) >= 4:
+                        candidate_requirements.append(atomic)
 
         return candidate_requirements, lang

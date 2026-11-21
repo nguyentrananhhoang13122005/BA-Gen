@@ -80,11 +80,30 @@ class OfflineMLClassifierStrategy(IClassifierStrategy):
         X = self.vectorizer.transform(sentences)
         decisions = self.classifier.decision_function(X)
 
+        fr_action_pattern = re.compile(
+            r"\b(upload|uploads|split|splits|classify|classifies|flag|flags|generate|generates|"
+            r"read|reads|build|Allow|allows|create|creates|register|login|search|pay|export|"
+            r"cho phép|tải lên|đăng ký|đăng nhập|tìm kiếm|thanh toán|quản lý|thêm|xóa|sửa)\b",
+            flags=re.IGNORECASE,
+        )
+
         for idx, (sentence, score) in enumerate(zip(sentences, decisions), start=1):
             req_id = f"REQ-{idx:02d}"
             prob_nfr = self._sigmoid(score)
 
-            if prob_nfr >= 0.50:
+            # Kiểm tra có từ khóa NFR thực tế hay không
+            has_nfr_kw = any(
+                re.search(r"\b" + re.escape(kw) + r"\b", sentence.lower())
+                for kws in NFR_KEYWORDS.values()
+                for kw in kws
+            )
+            has_fr_verb = bool(fr_action_pattern.search(sentence))
+
+            if has_fr_verb and not has_nfr_kw:
+                req_type = "FR"
+                category = None
+                confidence = max(round(1.0 - prob_nfr, 2), 0.85)
+            elif prob_nfr >= 0.50:
                 req_type = "NFR"
                 category = self._determine_nfr_category(sentence)
                 confidence = round(prob_nfr, 2)

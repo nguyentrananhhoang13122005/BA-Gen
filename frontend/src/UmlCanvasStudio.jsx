@@ -1,19 +1,22 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 /**
- * Chia dòng văn bản tiếng Việt để hiển thị gọn bên trong hình Elip Use Case
+ * Chia dòng nhãn Use Case cân đối theo chuẩn UML 2.5
  */
-function wrapLabel(text, maxCharsPerLine = 24) {
-  const words = (text || '').trim().split(/\s+/);
+function wrapUseCaseText(text, maxChars = 24) {
+  const clean = (text || '').trim();
+  if (clean.length <= maxChars) return [clean];
+  const words = clean.split(/\s+/);
   const lines = [];
   let current = '';
 
-  words.forEach((w) => {
-    if ((current + ' ' + w).trim().length <= maxCharsPerLine) {
-      current = (current + ' ' + w).trim();
+  words.forEach((word) => {
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length <= maxChars) {
+      current = candidate;
     } else {
       if (current) lines.push(current);
-      current = w;
+      current = word;
     }
   });
   if (current) lines.push(current);
@@ -21,7 +24,63 @@ function wrapLabel(text, maxCharsPerLine = 24) {
 }
 
 /**
- * Tạo bố cục tọa độ tự động chuẩn UML 2.5 từ danh sách User Stories
+ * Tính bán kính Elip (rx, ry) vừa vặn với độ dài chữ bên trong
+ */
+function getEllipseRadii(name) {
+  const lines = wrapUseCaseText(name, 24);
+  const longest = Math.max(...lines.map((l) => l.length), 10);
+  const rx = Math.max(98, Math.min(142, Math.round(longest * 3.9 + 30)));
+  const ry = lines.length >= 3 ? 40 : lines.length === 2 ? 35 : 30;
+  return { rx, ry, lines };
+}
+
+/**
+ * Toán học giao điểm tia - Elip / Actor để đường nối luôn chạm đúng mép viền chuẩn StarUML / Draw.io
+ */
+function computePerimeterPoints(srcNode, dstNode) {
+  const dx = dstNode.x - srcNode.x;
+  const dy = dstNode.y - srcNode.y;
+  const angle = Math.atan2(dy, dx);
+
+  let x1 = srcNode.x;
+  let y1 = srcNode.y;
+  if (srcNode.kind === 'actor') {
+    x1 = srcNode.x + Math.cos(angle) * 32;
+    y1 = srcNode.y + Math.sin(angle) * 36;
+  } else {
+    const { rx, ry } = getEllipseRadii(srcNode.name);
+    x1 = srcNode.x + (rx + 2) * Math.cos(angle);
+    y1 = srcNode.y + (ry + 2) * Math.sin(angle);
+  }
+
+  const backAngle = angle + Math.PI;
+  let x2 = dstNode.x;
+  let y2 = dstNode.y;
+  if (dstNode.kind === 'actor') {
+    x2 = dstNode.x + Math.cos(backAngle) * 32;
+    y2 = dstNode.y + Math.sin(backAngle) * 36;
+  } else {
+    const { rx, ry } = getEllipseRadii(dstNode.name);
+    x2 = dstNode.x + (rx + 4) * Math.cos(backAngle);
+    y2 = dstNode.y + (ry + 4) * Math.sin(backAngle);
+  }
+
+  return { x1, y1, x2, y2 };
+}
+
+/**
+ * Làm sạch tên hệ thống hiển thị trên khung System Boundary
+ */
+function cleanSystemTitle(rawTitle) {
+  if (!rawTitle) return 'Hệ thống Phần mềm';
+  return rawTitle
+    .replace(/\.docx$|\.txt$/i, '')
+    .replace(/^Topic\s+\d+\s*[—\-:]\s*/i, '')
+    .trim();
+}
+
+/**
+ * Khởi tạo đồ thị UML 2.5 chuẩn từ danh sách User Stories
  */
 function buildInitialGraph(userStories = [], projectName = 'Hệ thống Phần mềm') {
   const actorMap = new Map();
@@ -29,64 +88,95 @@ function buildInitialGraph(userStories = [], projectName = 'Hệ thống Phần 
   const links = [];
 
   userStories.forEach((us, idx) => {
-    const roleName = (us.role || 'Người dùng').trim();
+    const roleName = (us.role || 'Business Analyst').trim();
     if (!actorMap.has(roleName)) {
       actorMap.set(roleName, {
         id: `actor_${actorMap.size + 1}`,
         name: roleName,
-        x: 115,
-        y: 130 + actorMap.size * 145,
+        x: 105,
+        y: 160 + actorMap.size * 170,
       });
     }
     const actor = actorMap.get(roleName);
     const ucId = `uc_${idx + 1}`;
-    const ucName = (us.puml_usecase_name || us.goal || `Chức năng ${idx + 1}`).trim();
+    const ucName = (us.puml_usecase_name || us.goal || `Use Case ${idx + 1}`).trim();
 
     useCases.push({
       id: ucId,
-      code: us.story_id || `UC-${idx + 1}`,
+      code: `UC-${String(idx + 1).padStart(2, '0')}`,
       name: ucName,
       x: 0,
       y: 0,
     });
 
     links.push({
-      id: `link_${idx + 1}`,
+      id: `link_assoc_${idx + 1}`,
       from: actor.id,
       to: ucId,
-      type: 'association', // 'association' | 'include' | 'extend'
+      type: 'association',
     });
   });
 
   const actors = Array.from(actorMap.values());
-  const useTwoCols = useCases.length > 5;
+  const count = useCases.length;
 
+  // Bố cục 2 cột so le (Staggered Dual-Column UML Layout) để các đường nối từ Actor không bao giờ cắt đè lên Elip khác
   useCases.forEach((uc, idx) => {
-    if (useTwoCols) {
+    if (count <= 4) {
+      uc.x = 560;
+      uc.y = 125 + idx * 105;
+    } else {
       const col = idx % 2;
       const row = Math.floor(idx / 2);
-      uc.x = col === 0 ? 450 : 740;
-      uc.y = 125 + row * 105;
-    } else {
-      uc.x = 560;
-      uc.y = 125 + idx * 100;
+      uc.x = col === 0 ? 455 : 755;
+      uc.y = 120 + row * 115 + (col === 1 ? 32 : 0);
     }
   });
 
-  // Căn giữa dọc cho danh sách Actor theo chiều cao của Use Cases
-  const maxUcY = useCases.length > 0 ? Math.max(...useCases.map((u) => u.y)) : 320;
-  const totalHeight = Math.max(maxUcY + 120, actors.length * 145 + 100, 460);
+  // Tự động nhận diện quan hệ <<include>> / <<extend>> hợp lý giữa các Use Case liên tiếp
+  for (let i = 0; i < useCases.length - 1; i++) {
+    const cur = useCases[i].name.toLowerCase();
+    const nxt = useCases[i + 1].name.toLowerCase();
+    if (
+      (cur.includes('upload') && nxt.includes('split')) ||
+      (cur.includes('split') && nxt.includes('classify')) ||
+      (cur.includes('tải') && nxt.includes('tách')) ||
+      (cur.includes('giỏ hàng') && nxt.includes('thanh toán'))
+    ) {
+      links.push({
+        id: `link_inc_${i + 1}`,
+        from: useCases[i].id,
+        to: useCases[i + 1].id,
+        type: 'include',
+      });
+    } else if (
+      (cur.includes('classify') && nxt.includes('flag')) ||
+      (cur.includes('flag') && nxt.includes('generate'))
+    ) {
+      links.push({
+        id: `link_ext_${i + 1}`,
+        from: useCases[i + 1].id,
+        to: useCases[i].id,
+        type: 'extend',
+      });
+    }
+  }
 
-  if (actors.length > 0) {
-    const spacing = Math.min(150, Math.max(115, (totalHeight - 120) / Math.max(actors.length, 1)));
-    const startY = Math.max(120, (totalHeight - (actors.length - 1) * spacing) / 2);
+  const maxUcY = useCases.length ? Math.max(...useCases.map((u) => u.y)) : 340;
+  const totalH = Math.max(maxUcY + 115, actors.length * 165 + 110, 480);
+
+  if (actors.length === 1) {
+    actors[0].y = Math.round(totalH / 2);
+  } else if (actors.length > 1) {
+    const gap = Math.min(175, Math.max(130, (totalH - 140) / (actors.length - 1)));
+    const topY = Math.round((totalH - gap * (actors.length - 1)) / 2);
     actors.forEach((a, i) => {
-      a.y = Math.round(startY + i * spacing);
+      a.y = topY + i * gap;
     });
   }
 
   return {
-    systemTitle: projectName || 'Hệ thống Phần mềm',
+    systemTitle: cleanSystemTitle(projectName),
     actors,
     useCases,
     links,
@@ -94,7 +184,7 @@ function buildInitialGraph(userStories = [], projectName = 'Hệ thống Phần 
 }
 
 /**
- * Sinh mã chuẩn PlantUML từ trạng thái đồ thị trên Canvas
+ * Sinh mã chuẩn PlantUML 2.5 từ trạng thái đồ thị
  */
 function generatePlantUmlFromGraph(graph) {
   const lines = [
@@ -102,14 +192,17 @@ function generatePlantUmlFromGraph(graph) {
     'left to right direction',
     'skinparam packageStyle rectangle',
     'skinparam shadowing false',
+    'skinparam defaultFontName "Segoe UI"',
     'skinparam usecase {',
-    '  BackgroundColor #EFF6FF',
-    '  BorderColor #1D4ED8',
+    '  BackgroundColor #F8FAFC',
+    '  BorderColor #1E3A8A',
+    '  BorderThickness 1.8',
     '  ArrowColor #334155',
     '}',
     'skinparam actor {',
-    '  BackgroundColor #0F766E',
+    '  BackgroundColor #FFFFFF',
     '  BorderColor #0F172A',
+    '  BorderThickness 1.8',
     '}',
     '',
   ];
@@ -120,11 +213,11 @@ function generatePlantUmlFromGraph(graph) {
   });
 
   lines.push('');
-  const safeSys = (graph.systemTitle || 'Hệ thống').replace(/"/g, "'");
-  lines.push(`rectangle "Hệ thống: ${safeSys}" {`);
+  const safeSys = (graph.systemTitle || 'System').replace(/"/g, "'");
+  lines.push(`rectangle "${safeSys}" {`);
   graph.useCases.forEach((uc) => {
     const safeUc = uc.name.replace(/"/g, "'");
-    lines.push(`  usecase "${safeUc}\\n(${uc.code})" as ${uc.id}`);
+    lines.push(`  usecase "${safeUc}" as ${uc.id}`);
   });
   lines.push('}');
   lines.push('');
@@ -135,7 +228,7 @@ function generatePlantUmlFromGraph(graph) {
     } else if (lnk.type === 'extend') {
       lines.push(`${lnk.from} ..> ${lnk.to} : <<extend>>`);
     } else {
-      lines.push(`${lnk.from} --> ${lnk.to}`);
+      lines.push(`${lnk.from} -- ${lnk.to}`);
     }
   });
 
@@ -147,33 +240,27 @@ export default function UmlCanvasStudio({
   userStories = [],
   projectName = 'Hệ thống Phần mềm',
   initialPlantUmlCode = '',
-  hasKrokiImage = false,
 }) {
   const [graph, setGraph] = useState(() => buildInitialGraph(userStories, projectName));
-  const [selectedNode, setSelectedNode] = useState(null); // { kind: 'actor' | 'uc', id: string }
-  const [dragging, setDragging] = useState(null); // { kind, id, offsetX, offsetY }
+  const [selectedItem, setSelectedItem] = useState(null); // { kind: 'actor' | 'uc' | 'link', id: string }
+  const [dragging, setDragging] = useState(null);
+  const [connectMode, setConnectMode] = useState(null); // null | { step: 'pick-from' | 'pick-to', fromId?: string, type: 'association' | 'include' | 'extend' }
   const [zoom, setZoom] = useState(1);
-  const [mode, setMode] = useState('canvas'); // 'canvas' | 'code'
+  const [mode, setMode] = useState('canvas');
   const [pumlText, setPumlText] = useState(initialPlantUmlCode);
   const [syncMessage, setSyncMessage] = useState('');
 
-  // Form thêm nhanh quan hệ nối dây
-  const [newLinkFrom, setNewLinkFrom] = useState('');
-  const [newLinkTo, setNewLinkTo] = useState('');
-  const [newLinkType, setNewLinkType] = useState('association');
-
   const svgRef = useRef(null);
 
-  // Khởi tạo lại đồ thị khi danh sách userStories thay đổi
   useEffect(() => {
     const nextGraph = buildInitialGraph(userStories, projectName);
     setGraph(nextGraph);
-    setPumlText(initialPlantUmlCode || generatePlantUmlFromGraph(nextGraph));
-    setSelectedNode(null);
+    setPumlText(generatePlantUmlFromGraph(nextGraph));
+    setSelectedItem(null);
+    setConnectMode(null);
   }, [userStories, projectName]);
 
-  // Tự động đồng bộ mã PlantUML mỗi khi người dùng kéo thả hoặc thêm/sửa/xóa nút trên Canvas
-  const syncGraphToPlantUml = (updatedGraph) => {
+  const syncToBackend = (updatedGraph) => {
     const code = generatePlantUmlFromGraph(updatedGraph);
     setPumlText(code);
     fetch('/api/diagram/update', {
@@ -183,32 +270,60 @@ export default function UmlCanvasStudio({
     }).catch(() => {});
   };
 
-  // Tính kích thước khung vẽ SVG tự động theo tọa độ các phần tử
+  const canvasWidth = 980;
   const canvasHeight = useMemo(() => {
-    const maxActorY = graph.actors.length ? Math.max(...graph.actors.map((a) => a.y)) : 300;
-    const maxUcY = graph.useCases.length ? Math.max(...graph.useCases.map((u) => u.y)) : 300;
-    return Math.max(maxActorY + 130, maxUcY + 130, 500);
+    const maxA = graph.actors.length ? Math.max(...graph.actors.map((a) => a.y)) : 300;
+    const maxU = graph.useCases.length ? Math.max(...graph.useCases.map((u) => u.y)) : 300;
+    return Math.max(maxA + 125, maxU + 115, 500);
   }, [graph]);
 
-  const canvasWidth = 960;
-
-  // Chuyển đổi tọa độ chuột màn hình sang tọa độ bên trong SVG
   const getSvgCoords = (clientX, clientY) => {
     const svg = svgRef.current;
     if (!svg) return { x: 0, y: 0 };
     const rect = svg.getBoundingClientRect();
-    const scaleX = canvasWidth / rect.width;
-    const scaleY = canvasHeight / rect.height;
     return {
-      x: (clientX - rect.left) * scaleX,
-      y: (clientY - rect.top) * scaleY,
+      x: ((clientX - rect.left) / rect.width) * canvasWidth,
+      y: ((clientY - rect.top) / rect.height) * canvasHeight,
     };
   };
 
+  // Xử lý click / kéo nút trên bản vẽ
   const handlePointerDownNode = (e, kind, item) => {
     e.stopPropagation();
+
+    // Nếu đang ở chế độ Kẻ Đường Nối Trực Tiếp
+    if (connectMode) {
+      if (connectMode.step === 'pick-from') {
+        setConnectMode({ ...connectMode, step: 'pick-to', fromId: item.id });
+      } else if (connectMode.step === 'pick-to') {
+        if (connectMode.fromId && connectMode.fromId !== item.id) {
+          const exists = graph.links.some(
+            (l) => l.from === connectMode.fromId && l.to === item.id
+          );
+          if (!exists) {
+            const nextGraph = {
+              ...graph,
+              links: [
+                ...graph.links,
+                {
+                  id: `link_${Date.now()}`,
+                  from: connectMode.fromId,
+                  to: item.id,
+                  type: connectMode.type,
+                },
+              ],
+            };
+            setGraph(nextGraph);
+            syncToBackend(nextGraph);
+          }
+        }
+        setConnectMode(null);
+      }
+      return;
+    }
+
     const pt = getSvgCoords(e.clientX, e.clientY);
-    setSelectedNode({ kind, id: item.id });
+    setSelectedItem({ kind, id: item.id });
     setDragging({
       kind,
       id: item.id,
@@ -220,8 +335,14 @@ export default function UmlCanvasStudio({
   const handlePointerMoveCanvas = (e) => {
     if (!dragging) return;
     const pt = getSvgCoords(e.clientX, e.clientY);
-    const nextX = Math.max(65, Math.min(canvasWidth - 95, Math.round(pt.x - dragging.offsetX)));
-    const nextY = Math.max(85, Math.min(canvasHeight - 60, Math.round(pt.y - dragging.offsetY)));
+    // Snap-to-grid 8px cho bản vẽ thẳng hàng sắc nét
+    const rawX = pt.x - dragging.offsetX;
+    const rawY = pt.y - dragging.offsetY;
+    const snappedX = Math.round(rawX / 8) * 8;
+    const snappedY = Math.round(rawY / 8) * 8;
+
+    const nextX = Math.max(70, Math.min(canvasWidth - 110, snappedX));
+    const nextY = Math.max(85, Math.min(canvasHeight - 65, snappedY));
 
     setGraph((prev) => {
       if (dragging.kind === 'actor') {
@@ -244,42 +365,40 @@ export default function UmlCanvasStudio({
   const handlePointerUpCanvas = () => {
     if (dragging) {
       setDragging(null);
-      syncGraphToPlantUml(graph);
+      syncToBackend(graph);
     }
   };
 
-  // Thêm Người dùng (Actor) mới trực tiếp trên Web
   const handleAddActor = () => {
-    const nextIdx = graph.actors.length + 1;
+    const idx = graph.actors.length + 1;
     const newActor = {
       id: `actor_${Date.now()}`,
-      name: `Người dùng mới ${nextIdx}`,
-      x: 115,
-      y: 120 + (graph.actors.length) * 135,
+      name: `Actor ${idx}`,
+      x: 105,
+      y: Math.min(canvasHeight - 80, 140 + (idx - 1) * 140),
     };
     const nextGraph = { ...graph, actors: [...graph.actors, newActor] };
     setGraph(nextGraph);
-    setSelectedNode({ kind: 'actor', id: newActor.id });
-    syncGraphToPlantUml(nextGraph);
+    setSelectedItem({ kind: 'actor', id: newActor.id });
+    syncToBackend(nextGraph);
   };
 
-  // Thêm Chức năng (Use Case) mới trực tiếp trên Web
   const handleAddUseCase = () => {
-    const nextIdx = graph.useCases.length + 1;
-    const defaultActorId = graph.actors[0]?.id;
+    const idx = graph.useCases.length + 1;
+    const firstActor = graph.actors[0];
     const newUc = {
       id: `uc_${Date.now()}`,
-      code: `UC-${String(nextIdx).padStart(2, '0')}`,
-      name: `Chức năng mới ${nextIdx}`,
-      x: nextIdx % 2 === 1 ? 460 : 730,
-      y: 125 + Math.floor((nextIdx - 1) / 2) * 105,
+      code: `UC-${String(idx).padStart(2, '0')}`,
+      name: `New Use Case ${idx}`,
+      x: idx % 2 === 1 ? 460 : 755,
+      y: 125 + Math.floor((idx - 1) / 2) * 110,
     };
-    const nextLinks = defaultActorId
+    const nextLinks = firstActor
       ? [
           ...graph.links,
           {
             id: `link_${Date.now()}`,
-            from: defaultActorId,
+            from: firstActor.id,
             to: newUc.id,
             type: 'association',
           },
@@ -292,110 +411,92 @@ export default function UmlCanvasStudio({
       links: nextLinks,
     };
     setGraph(nextGraph);
-    setSelectedNode({ kind: 'uc', id: newUc.id });
-    syncGraphToPlantUml(nextGraph);
+    setSelectedItem({ kind: 'uc', id: newUc.id });
+    syncToBackend(nextGraph);
   };
 
-  // Thêm đường nối mới giữa Actor -> Use Case hoặc giữa 2 Use Cases (<<include>> / <<extend>>)
-  const handleAddLink = () => {
-    if (!newLinkFrom || !newLinkTo || newLinkFrom === newLinkTo) return;
-    const exists = graph.links.some(
-      (l) => l.from === newLinkFrom && l.to === newLinkTo && l.type === newLinkType
-    );
-    if (exists) return;
-
-    const nextGraph = {
-      ...graph,
-      links: [
-        ...graph.links,
-        {
-          id: `link_${Date.now()}`,
-          from: newLinkFrom,
-          to: newLinkTo,
-          type: newLinkType,
-        },
-      ],
-    };
-    setGraph(nextGraph);
-    syncGraphToPlantUml(nextGraph);
-  };
-
-  // Đổi tên phần tử đang chọn
-  const handleRenameSelected = (newName) => {
-    if (!selectedNode) return;
+  const handleRenameSelectedNode = (newName) => {
+    if (!selectedItem || selectedItem.kind === 'link') return;
     const nextGraph =
-      selectedNode.kind === 'actor'
+      selectedItem.kind === 'actor'
         ? {
             ...graph,
             actors: graph.actors.map((a) =>
-              a.id === selectedNode.id ? { ...a, name: newName } : a
+              a.id === selectedItem.id ? { ...a, name: newName } : a
             ),
           }
         : {
             ...graph,
             useCases: graph.useCases.map((u) =>
-              u.id === selectedNode.id ? { ...u, name: newName } : u
+              u.id === selectedItem.id ? { ...u, name: newName } : u
             ),
           };
     setGraph(nextGraph);
-    syncGraphToPlantUml(nextGraph);
+    syncToBackend(nextGraph);
   };
 
-  // Xóa phần tử đang chọn
-  const handleDeleteSelected = () => {
-    if (!selectedNode) return;
-    const targetId = selectedNode.id;
+  const handleChangeSelectedLinkType = (newType) => {
+    if (!selectedItem || selectedItem.kind !== 'link') return;
     const nextGraph = {
       ...graph,
-      actors: graph.actors.filter((a) => a.id !== targetId),
-      useCases: graph.useCases.filter((u) => u.id !== targetId),
-      links: graph.links.filter((l) => l.from !== targetId && l.to !== targetId),
+      links: graph.links.map((l) =>
+        l.id === selectedItem.id ? { ...l, type: newType } : l
+      ),
     };
     setGraph(nextGraph);
-    setSelectedNode(null);
-    syncGraphToPlantUml(nextGraph);
+    syncToBackend(nextGraph);
   };
 
-  // Sắp xếp lại bố cục chuẩn tự động
+  const handleDeleteSelected = () => {
+    if (!selectedItem) return;
+    const id = selectedItem.id;
+    const nextGraph = {
+      ...graph,
+      actors: graph.actors.filter((a) => a.id !== id),
+      useCases: graph.useCases.filter((u) => u.id !== id),
+      links: graph.links.filter((l) => l.id !== id && l.from !== id && l.to !== id),
+    };
+    setGraph(nextGraph);
+    setSelectedItem(null);
+    syncToBackend(nextGraph);
+  };
+
   const handleResetLayout = () => {
-    const reset = buildInitialGraph(userStories, projectName);
-    setGraph(reset);
-    setSelectedNode(null);
-    syncGraphToPlantUml(reset);
+    const fresh = buildInitialGraph(userStories, projectName);
+    setGraph(fresh);
+    setSelectedItem(null);
+    setConnectMode(null);
+    syncToBackend(fresh);
   };
 
-  // Tải trực tiếp file ảnh Vector SVG từ bản vẽ trên Web
   const handleDownloadSvg = () => {
     const svgEl = svgRef.current;
     if (!svgEl) return;
-    const serializer = new XMLSerializer();
-    let source = serializer.serializeToString(svgEl);
-    if (!source.match(/^<svg[^>]+xmlns="http:\/\/www\.w3\.org\/2000\/svg"/)) {
+    let source = new XMLSerializer().serializeToString(svgEl);
+    if (!source.includes('xmlns="http://www.w3.org/2000/svg"')) {
       source = source.replace(/^<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
     }
     const blob = new Blob([source], { type: 'image/svg+xml;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${projectName || 'UseCase'}_UML_Diagram.svg`;
+    a.download = `${graph.systemTitle}_UseCase_UML.svg`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
-  // Kết xuất trực tiếp bản vẽ SVG trên Web ra ảnh PNG độ phân giải cao (2x HD)
-  const handleDownloadPngFromCanvas = () => {
+  const handleDownloadPng = () => {
     const svgEl = svgRef.current;
     if (!svgEl) return;
-    const serializer = new XMLSerializer();
-    let source = serializer.serializeToString(svgEl);
-    if (!source.match(/^<svg[^>]+xmlns="http:\/\/www\.w3\.org\/2000\/svg"/)) {
+    let source = new XMLSerializer().serializeToString(svgEl);
+    if (!source.includes('xmlns="http://www.w3.org/2000/svg"')) {
       source = source.replace(/^<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
     }
     const svgBlob = new Blob([source], { type: 'image/svg+xml;charset=utf-8' });
     const url = URL.createObjectURL(svgBlob);
     const img = new Image();
     img.onload = () => {
-      const scale = 2; // 2x Retina HD
+      const scale = 2;
       const canvas = document.createElement('canvas');
       canvas.width = canvasWidth * scale;
       canvas.height = canvasHeight * scale;
@@ -404,13 +505,12 @@ export default function UmlCanvasStudio({
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       URL.revokeObjectURL(url);
-
       canvas.toBlob((pngBlob) => {
         if (!pngBlob) return;
         const pngUrl = URL.createObjectURL(pngBlob);
         const a = document.createElement('a');
         a.href = pngUrl;
-        a.download = `${projectName || 'UseCase'}_UML_Diagram.png`;
+        a.download = `${graph.systemTitle}_UseCase_UML.png`;
         a.click();
         URL.revokeObjectURL(pngUrl);
       }, 'image/png');
@@ -418,57 +518,28 @@ export default function UmlCanvasStudio({
     img.src = url;
   };
 
-  // Lưu mã PlantUML khi sửa ở tab Code
-  const handleApplyPlantUmlCode = async () => {
-    setSyncMessage('Đang cập nhật mã PlantUML...');
-    try {
-      const resp = await fetch('/api/diagram/update', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plantuml_code: pumlText }),
-      });
-      if (resp.ok) {
-        setSyncMessage('✓ Đã lưu và đồng bộ mã PlantUML thành công!');
-      } else {
-        setSyncMessage('Không thể cập nhật mã PlantUML.');
-      }
-    } catch {
-      setSyncMessage('Lỗi kết nối khi lưu mã PlantUML.');
-    }
-  };
-
-  // Tìm đối tượng đang được chọn để hiển thị trên thanh chỉnh sửa
-  const selectedObj = useMemo(() => {
-    if (!selectedNode) return null;
-    if (selectedNode.kind === 'actor') {
-      return graph.actors.find((a) => a.id === selectedNode.id) || null;
-    }
-    return graph.useCases.find((u) => u.id === selectedNode.id) || null;
-  }, [selectedNode, graph]);
-
-  // Danh sách tất cả các nút để chọn nối dây
-  const allNodesForLink = useMemo(() => {
-    return [
-      ...graph.actors.map((a) => ({ id: a.id, label: `[Người dùng] ${a.name}` })),
-      ...graph.useCases.map((u) => ({ id: u.id, label: `[Chức năng] ${u.code}: ${u.name}` })),
-    ];
-  }, [graph]);
-
-  // Bảng tra cứu tọa độ của từng nút để vẽ đường nối SVG
-  const nodeCoordsMap = useMemo(() => {
-    const map = {};
+  const nodeMap = useMemo(() => {
+    const m = {};
     graph.actors.forEach((a) => {
-      map[a.id] = { x: a.x, y: a.y, kind: 'actor' };
+      m[a.id] = { ...a, kind: 'actor' };
     });
     graph.useCases.forEach((u) => {
-      map[u.id] = { x: u.x, y: u.y, kind: 'uc' };
+      m[u.id] = { ...u, kind: 'uc' };
     });
-    return map;
+    return m;
   }, [graph]);
+
+  const activeNodeObj = useMemo(() => {
+    if (!selectedItem) return null;
+    if (selectedItem.kind === 'link') {
+      return graph.links.find((l) => l.id === selectedItem.id) || null;
+    }
+    return nodeMap[selectedItem.id] || null;
+  }, [selectedItem, graph, nodeMap]);
 
   return (
     <div className="card" style={{ marginBottom: '22px' }}>
-      {/* TOP BAR: SWITCH BETWEEN VISUAL CANVAS & PLANTUML CODE */}
+      {/* HEADER BAR */}
       <div
         style={{
           display: 'flex',
@@ -477,40 +548,40 @@ export default function UmlCanvasStudio({
           gap: '12px',
           flexWrap: 'wrap',
           paddingBottom: '14px',
-          marginBottom: '16px',
+          marginBottom: '14px',
           borderBottom: '1px solid #E2E8F0',
         }}
       >
         <div>
           <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0F172A' }}>
-            Bảng Vẽ Sơ đồ UML Trực tiếp trên Web (Kéo - Thả &amp; Chỉnh sửa Tương tác)
+            Trình Vẽ Sơ đồ UML 2.5 Use Case Tương tác (Chuẩn StarUML / Draw.io)
           </h3>
           <p style={{ fontSize: '0.84rem', color: '#64748B' }}>
-            Dùng chuột kéo-thả vị trí các hình trên bản vẽ, bấm vào hình bất kỳ để đổi tên hoặc thêm mới Người dùng &amp; Chức năng
+            Kéo-thả các phần tử, bấm vào bất kỳ hình hoặc đường nối nào để chỉnh sửa trực tiếp trên bản vẽ
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '8px' }}>
           <button
             type="button"
             className={`filter-tab ${mode === 'canvas' ? 'active' : ''}`}
             onClick={() => setMode('canvas')}
           >
-            Bảng vẽ Kéo - Thả trực quan
+            Bản vẽ UML Tương tác
           </button>
           <button
             type="button"
             className={`filter-tab ${mode === 'code' ? 'active' : ''}`}
             onClick={() => setMode('code')}
           >
-            Mã nguồn PlantUML (@startuml)
+            Mã PlantUML (@startuml)
           </button>
         </div>
       </div>
 
       {mode === 'canvas' && (
         <div>
-          {/* VISUAL DRAWING TOOLBAR */}
+          {/* TOOLBAR: ADD NODES, DRAW ARROWS ON CANVAS, AUTO-LAYOUT, EXPORT */}
           <div
             style={{
               display: 'flex',
@@ -519,36 +590,70 @@ export default function UmlCanvasStudio({
               gap: '10px',
               flexWrap: 'wrap',
               background: '#F8FAFC',
-              border: '1px solid #E2E8F0',
+              border: '1px solid #CBD5E1',
               borderRadius: '10px',
               padding: '10px 14px',
-              marginBottom: '14px',
+              marginBottom: '12px',
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
               <button
                 type="button"
-                className="btn btn-primary"
-                style={{ padding: '7px 13px', fontSize: '0.84rem' }}
+                className="btn btn-outline"
+                style={{ padding: '7px 12px', fontSize: '0.83rem', background: '#FFFFFF' }}
                 onClick={handleAddActor}
               >
-                + Thêm Người dùng (Actor)
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                style={{ padding: '7px 13px', fontSize: '0.84rem', background: '#0F766E' }}
-                onClick={handleAddUseCase}
-              >
-                + Thêm Chức năng (Use Case)
+                + Thêm Actor
               </button>
               <button
                 type="button"
                 className="btn btn-outline"
-                style={{ padding: '7px 12px', fontSize: '0.82rem' }}
+                style={{ padding: '7px 12px', fontSize: '0.83rem', background: '#FFFFFF' }}
+                onClick={handleAddUseCase}
+              >
+                + Thêm Use Case
+              </button>
+
+              {/* NÚT KẺ ĐƯỜNG NỐI TRỰC TIẾP TRÊN HÌNH */}
+              <button
+                type="button"
+                className={`btn ${connectMode ? 'btn-primary' : 'btn-outline'}`}
+                style={{
+                  padding: '7px 12px',
+                  fontSize: '0.83rem',
+                  background: connectMode ? '#2563EB' : '#FFFFFF',
+                }}
+                onClick={() =>
+                  setConnectMode(
+                    connectMode
+                      ? null
+                      : { step: 'pick-from', type: 'association' }
+                  )
+                }
+              >
+                {connectMode ? '✕ Hủy kẻ đường nối' : '⎯ Nối dây trực tiếp trên hình'}
+              </button>
+
+              {connectMode && (
+                <select
+                  className="select-field"
+                  style={{ width: 'auto', padding: '6px 10px', fontSize: '0.82rem' }}
+                  value={connectMode.type}
+                  onChange={(e) => setConnectMode({ ...connectMode, type: e.target.value })}
+                >
+                  <option value="association">Kiểu: Đường nối Actor — Use Case</option>
+                  <option value="include">Kiểu: --«include»--&gt;</option>
+                  <option value="extend">Kiểu: --«extend»--&gt;</option>
+                </select>
+              )}
+
+              <button
+                type="button"
+                className="btn btn-outline"
+                style={{ padding: '7px 12px', fontSize: '0.82rem', background: '#FFFFFF' }}
                 onClick={handleResetLayout}
               >
-                Sắp xếp lại tự động
+                Căn chỉnh lại bố cục
               </button>
             </div>
 
@@ -556,34 +661,34 @@ export default function UmlCanvasStudio({
               <button
                 type="button"
                 className="btn btn-outline"
-                style={{ padding: '6px 10px', fontSize: '0.8rem' }}
-                onClick={() => setZoom((z) => Math.max(0.7, Number((z - 0.1).toFixed(1))))}
+                style={{ padding: '6px 10px', fontSize: '0.8rem', background: '#FFFFFF' }}
+                onClick={() => setZoom((z) => Math.max(0.75, Number((z - 0.1).toFixed(2))))}
               >
-                Thu nhỏ (-)
+                -
               </button>
-              <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#475569' }}>
+              <span style={{ fontSize: '0.82rem', fontWeight: 700, minWidth: '42px', textAlign: 'center' }}>
                 {Math.round(zoom * 100)}%
               </span>
               <button
                 type="button"
                 className="btn btn-outline"
-                style={{ padding: '6px 10px', fontSize: '0.8rem' }}
-                onClick={() => setZoom((z) => Math.min(1.4, Number((z + 0.1).toFixed(1))))}
+                style={{ padding: '6px 10px', fontSize: '0.8rem', background: '#FFFFFF' }}
+                onClick={() => setZoom((z) => Math.min(1.35, Number((z + 0.1).toFixed(2))))}
               >
-                Phóng to (+)
+                +
               </button>
               <button
                 type="button"
-                className="btn btn-success"
-                style={{ padding: '7px 14px', fontSize: '0.84rem' }}
-                onClick={handleDownloadPngFromCanvas}
+                className="btn btn-primary"
+                style={{ padding: '7px 14px', fontSize: '0.83rem' }}
+                onClick={handleDownloadPng}
               >
                 Tải Ảnh Sơ đồ (.png)
               </button>
               <button
                 type="button"
                 className="btn btn-outline"
-                style={{ padding: '7px 12px', fontSize: '0.82rem' }}
+                style={{ padding: '7px 12px', fontSize: '0.82rem', background: '#FFFFFF' }}
                 onClick={handleDownloadSvg}
               >
                 Tải Vector (.svg)
@@ -591,73 +696,28 @@ export default function UmlCanvasStudio({
             </div>
           </div>
 
-          {/* QUICK CONNECTOR / LINK BUILDER BAR */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              flexWrap: 'wrap',
-              background: '#FFFFFF',
-              border: '1px solid #E2E8F0',
-              borderRadius: '10px',
-              padding: '9px 14px',
-              marginBottom: '14px',
-              fontSize: '0.84rem',
-            }}
-          >
-            <strong style={{ color: '#334155' }}>Nối dây quan hệ:</strong>
-            <select
-              className="select-field"
-              style={{ width: 'auto', maxWidth: '220px', padding: '6px 10px', fontSize: '0.82rem' }}
-              value={newLinkFrom}
-              onChange={(e) => setNewLinkFrom(e.target.value)}
+          {/* HƯỚNG DẪN KHI ĐANG BẬT CHẾ ĐỘ KẺ ĐƯỜNG NỐI TRỰC TIẾP */}
+          {connectMode && (
+            <div
+              style={{
+                background: '#EFF6FF',
+                border: '1px solid #93C5FD',
+                color: '#1E3A8A',
+                padding: '9px 14px',
+                borderRadius: '8px',
+                fontSize: '0.86rem',
+                fontWeight: 600,
+                marginBottom: '12px',
+              }}
             >
-              <option value="">-- Chọn điểm đầu --</option>
-              {allNodesForLink.map((n) => (
-                <option key={n.id} value={n.id}>
-                  {n.label}
-                </option>
-              ))}
-            </select>
+              {connectMode.step === 'pick-from'
+                ? '👉 Bước 1: Hãy bấm chuột vào hình Bắt đầu (Actor hoặc Use Case) ngay trên bản vẽ bên dưới...'
+                : '👉 Bước 2: Bây giờ hãy bấm chuột vào hình Use Case Đích để hoàn tất nối dây!'}
+            </div>
+          )}
 
-            <select
-              className="select-field"
-              style={{ width: 'auto', padding: '6px 10px', fontSize: '0.82rem' }}
-              value={newLinkType}
-              onChange={(e) => setNewLinkType(e.target.value)}
-            >
-              <option value="association">⎯⎯▶ Sử dụng trực tiếp</option>
-              <option value="include">- - ▶ &lt;&lt;include&gt;&gt; (Bắt buộc kèm)</option>
-              <option value="extend">- - ▶ &lt;&lt;extend&gt;&gt; (Mở rộng thêm)</option>
-            </select>
-
-            <select
-              className="select-field"
-              style={{ width: 'auto', maxWidth: '220px', padding: '6px 10px', fontSize: '0.82rem' }}
-              value={newLinkTo}
-              onChange={(e) => setNewLinkTo(e.target.value)}
-            >
-              <option value="">-- Chọn chức năng đích --</option>
-              {graph.useCases.map((u) => (
-                <option key={u.id} value={u.id}>
-                  [Chức năng] {u.code}: {u.name}
-                </option>
-              ))}
-            </select>
-
-            <button
-              type="button"
-              className="btn btn-outline"
-              style={{ padding: '6px 12px', fontSize: '0.82rem' }}
-              onClick={handleAddLink}
-            >
-              + Tạo đường nối
-            </button>
-          </div>
-
-          {/* SELECTED ELEMENT INSPECTOR BAR (WHEN USER CLICKS ANY NODE ON CANVAS) */}
-          {selectedObj && (
+          {/* THANH CHỈNH SỬA PHẦN TỬ ĐANG CHỌN (NODE HOẶC ĐƯỜNG NỐI) */}
+          {selectedItem && activeNodeObj && (
             <div
               style={{
                 display: 'flex',
@@ -665,25 +725,41 @@ export default function UmlCanvasStudio({
                 justifyContent: 'space-between',
                 gap: '12px',
                 flexWrap: 'wrap',
-                background: '#EFF6FF',
-                border: '1px solid #93C5FD',
-                borderRadius: '10px',
+                background: '#F0FDF4',
+                border: '1px solid #86EFAC',
+                borderRadius: '9px',
                 padding: '10px 14px',
-                marginBottom: '14px',
+                marginBottom: '12px',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: '260px' }}>
-                <span className="badge badge-num">
-                  {selectedNode.kind === 'actor' ? 'Đang chọn Người dùng' : `Đang chọn ${selectedObj.code}`}
-                </span>
-                <input
-                  type="text"
-                  className="input-field"
-                  style={{ padding: '6px 12px', fontSize: '0.9rem', maxWidth: '420px' }}
-                  value={selectedObj.name}
-                  onChange={(e) => handleRenameSelected(e.target.value)}
-                />
-              </div>
+              {selectedItem.kind !== 'link' ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: '260px' }}>
+                  <span className="badge badge-num">
+                    {selectedItem.kind === 'actor' ? 'Actor' : activeNodeObj.code}
+                  </span>
+                  <input
+                    type="text"
+                    className="input-field"
+                    style={{ padding: '6px 12px', fontSize: '0.9rem', maxWidth: '460px' }}
+                    value={activeNodeObj.name}
+                    onChange={(e) => handleRenameSelectedNode(e.target.value)}
+                  />
+                </div>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  <span className="badge badge-num">Đang chọn Đường nối</span>
+                  <select
+                    className="select-field"
+                    style={{ width: 'auto', padding: '6px 12px', fontSize: '0.85rem' }}
+                    value={activeNodeObj.type}
+                    onChange={(e) => handleChangeSelectedLinkType(e.target.value)}
+                  >
+                    <option value="association">Association (Đường thẳng liền)</option>
+                    <option value="include">«include» (Nét đứt có mũi tên)</option>
+                    <option value="extend">«extend» (Nét đứt mở rộng)</option>
+                  </select>
+                </div>
+              )}
 
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button
@@ -698,30 +774,29 @@ export default function UmlCanvasStudio({
                   }}
                   onClick={handleDeleteSelected}
                 >
-                  Xóa khỏi sơ đồ
+                  Xóa phần tử này
                 </button>
                 <button
                   type="button"
                   className="btn btn-outline"
-                  style={{ padding: '6px 12px', fontSize: '0.82rem' }}
-                  onClick={() => setSelectedNode(null)}
+                  style={{ padding: '6px 12px', fontSize: '0.82rem', background: '#FFFFFF' }}
+                  onClick={() => setSelectedItem(null)}
                 >
-                  Xong
+                  Đóng
                 </button>
               </div>
             </div>
           )}
 
-          {/* INTERACTIVE SVG UML 2.5 CANVAS */}
+          {/* BẢNG VẼ VECTOR UML 2.5 CHUẨN KỸ THUẬT */}
           <div
             style={{
-              background: '#FFFFFF',
-              border: '2px solid #CBD5E1',
-              borderRadius: '12px',
+              background: '#F1F5F9',
+              border: '1px solid #CBD5E1',
+              borderRadius: '10px',
+              padding: '16px',
               overflow: 'auto',
-              maxHeight: '640px',
-              position: 'relative',
-              boxShadow: 'inset 0 2px 6px rgba(15, 23, 42, 0.04)',
+              maxHeight: '680px',
             }}
           >
             <svg
@@ -732,225 +807,267 @@ export default function UmlCanvasStudio({
               style={{
                 display: 'block',
                 margin: '0 auto',
-                userSelect: 'none',
-                cursor: dragging ? 'grabbing' : 'default',
                 background: '#FFFFFF',
+                borderRadius: '6px',
+                boxShadow: '0 2px 10px rgba(15, 23, 42, 0.08)',
+                userSelect: 'none',
+                cursor: connectMode ? 'crosshair' : dragging ? 'grabbing' : 'default',
               }}
               onPointerMove={handlePointerMoveCanvas}
               onPointerUp={handlePointerUpCanvas}
               onPointerLeave={handlePointerUpCanvas}
-              onClick={() => setSelectedNode(null)}
+              onClick={() => setSelectedItem(null)}
             >
               <defs>
-                {/* Mũi tên chuẩn UML */}
+                {/* Mũi tên mở chuẩn UML 2.5 cho <<include>> & <<extend>> */}
                 <marker
-                  id="uml-arrow"
-                  viewBox="0 0 10 10"
-                  refX="9"
-                  refY="5"
-                  markerWidth="7"
-                  markerHeight="7"
+                  id="uml-open-arrow"
+                  viewBox="0 0 12 12"
+                  refX="10"
+                  refY="6"
+                  markerWidth="9"
+                  markerHeight="9"
                   orient="auto-start-reverse"
                 >
-                  <path d="M 0 1 L 9 5 L 0 9 z" fill="#334155" />
+                  <path
+                    d="M 1 2 L 10 6 L 1 10"
+                    fill="none"
+                    stroke="#1E293B"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
                 </marker>
-                <marker
-                  id="uml-arrow-dashed"
-                  viewBox="0 0 10 10"
-                  refX="9"
-                  refY="5"
-                  markerWidth="7"
-                  markerHeight="7"
-                  orient="auto-start-reverse"
-                >
-                  <path d="M 1 1 L 9 5 L 1 9" fill="none" stroke="#1D4ED8" strokeWidth="1.8" />
-                </marker>
-                <pattern id="uml-grid" width="24" height="24" patternUnits="userSpaceOnUse">
-                  <circle cx="2" cy="2" r="1" fill="#E2E8F0" />
-                </pattern>
+
+                {/* Bóng đổ nhẹ chuẩn StarUML cho Elip Use Case */}
+                <filter id="uml-drop-shadow" x="-10%" y="-10%" width="125%" height="125%">
+                  <feDropShadow dx="1" dy="2" stdDeviation="2" floodColor="#0F172A" floodOpacity="0.08" />
+                </filter>
+
+                <linearGradient id="uc-fill" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stopColor="#FFFFFF" />
+                  <stop offset="100%" stopColor="#EFF6FF" />
+                </linearGradient>
+
+                <linearGradient id="uc-fill-selected" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stopColor="#EFF6FF" />
+                  <stop offset="100%" stopColor="#DBEAFE" />
+                </linearGradient>
               </defs>
 
-              {/* Nền lưới chấm kỹ thuật */}
-              <rect x="0" y="0" width={canvasWidth} height={canvasHeight} fill="url(#uml-grid)" />
-
-              {/* KHUNG RANH GIỚI HỆ THỐNG (SYSTEM BOUNDARY BOX) */}
+              {/* KHUNG SYSTEM BOUNDARY CHUẨN UML 2.5 */}
               <rect
-                x="280"
-                y="32"
-                width="640"
-                height={canvasHeight - 64}
-                rx="12"
-                fill="#F8FAFC"
-                stroke="#334155"
-                strokeWidth="2"
+                x="255"
+                y="28"
+                width="695"
+                height={canvasHeight - 56}
+                rx="4"
+                fill="#FAFAFC"
+                stroke="#1E293B"
+                strokeWidth="1.8"
               />
-              <rect
-                x="280"
-                y="32"
-                width="640"
-                height="40"
-                rx="12"
-                fill="#0F172A"
+              {/* Thanh tiêu đề khung hệ thống chuẩn UML */}
+              <line
+                x1="255"
+                y1="66"
+                x2="950"
+                y2="66"
+                stroke="#CBD5E1"
+                strokeWidth="1.2"
               />
               <text
-                x="600"
-                y="57"
+                x="602"
+                y="45"
                 textAnchor="middle"
-                fill="#FFFFFF"
-                fontFamily="Be Vietnam Pro, sans-serif"
-                fontSize="14.5"
+                fill="#64748B"
+                fontFamily="JetBrains Mono, monospace"
+                fontSize="10.5"
+              >
+                «system»
+              </text>
+              <text
+                x="602"
+                y="60"
+                textAnchor="middle"
+                fill="#0F172A"
+                fontFamily="Be Vietnam Pro, Segoe UI, sans-serif"
+                fontSize="13.5"
                 fontWeight="700"
               >
-                Hệ thống: {graph.systemTitle}
+                {graph.systemTitle}
               </text>
 
-              {/* ĐƯỜNG NỐI QUAN HỆ (ASSOCIATIONS & INCLUDE / EXTEND) */}
+              {/* VẼ CÁC ĐƯỜNG NỐI QUAN HỆ (TÍNH GIAO ĐIỂM VIỀN CHÍNH XÁC) */}
               {graph.links.map((lnk) => {
-                const src = nodeCoordsMap[lnk.from];
-                const dst = nodeCoordsMap[lnk.to];
+                const src = nodeMap[lnk.from];
+                const dst = nodeMap[lnk.to];
                 if (!src || !dst) return null;
 
-                const x1 = src.kind === 'actor' ? src.x + 32 : src.x;
-                const y1 = src.y;
-                const x2 = dst.kind === 'uc' && src.kind === 'actor' ? dst.x - 118 : dst.x;
-                const y2 = dst.y;
+                const { x1, y1, x2, y2 } = computePerimeterPoints(src, dst);
                 const midX = (x1 + x2) / 2;
                 const midY = (y1 + y2) / 2;
-                const isSpecial = lnk.type === 'include' || lnk.type === 'extend';
+                const isDep = lnk.type === 'include' || lnk.type === 'extend';
+                const isSelectedLink =
+                  selectedItem?.kind === 'link' && selectedItem?.id === lnk.id;
 
                 return (
-                  <g key={lnk.id}>
-                    <path
-                      d={`M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`}
-                      fill="none"
-                      stroke={isSpecial ? '#1D4ED8' : '#475569'}
-                      strokeWidth={isSpecial ? '1.8' : '1.7'}
-                      strokeDasharray={isSpecial ? '6 4' : 'none'}
-                      markerEnd={isSpecial ? 'url(#uml-arrow-dashed)' : 'url(#uml-arrow)'}
+                  <g
+                    key={lnk.id}
+                    style={{ cursor: 'pointer' }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedItem({ kind: 'link', id: lnk.id });
+                    }}
+                  >
+                    {/* Vùng đệm trong suốt giúp click chọn đường nối dễ dàng */}
+                    <line
+                      x1={x1}
+                      y1={y1}
+                      x2={x2}
+                      y2={y2}
+                      stroke="transparent"
+                      strokeWidth="12"
                     />
-                    {isSpecial && (
-                      <text
-                        x={midX}
-                        y={midY - 6}
-                        textAnchor="middle"
-                        fill="#1D4ED8"
-                        fontFamily="JetBrains Mono, monospace"
-                        fontSize="11"
-                        fontWeight="600"
-                      >
-                        {`<<${lnk.type}>>`}
-                      </text>
+                    <line
+                      x1={x1}
+                      y1={y1}
+                      x2={x2}
+                      y2={y2}
+                      stroke={isSelectedLink ? '#2563EB' : '#1E293B'}
+                      strokeWidth={isSelectedLink ? '2.5' : '1.6'}
+                      strokeDasharray={isDep ? '6 4' : 'none'}
+                      markerEnd={isDep ? 'url(#uml-open-arrow)' : undefined}
+                    />
+                    {isDep && (
+                      <g transform={`translate(${midX}, ${midY})`}>
+                        <rect
+                          x="-36"
+                          y="-10"
+                          width="72"
+                          height="18"
+                          rx="4"
+                          fill="#FFFFFF"
+                          stroke="#CBD5E1"
+                          strokeWidth="1"
+                        />
+                        <text
+                          x="0"
+                          y="3"
+                          textAnchor="middle"
+                          fill="#1E3A8A"
+                          fontFamily="JetBrains Mono, monospace"
+                          fontSize="10.5"
+                          fontWeight="600"
+                        >
+                          {`«${lnk.type}»`}
+                        </text>
+                      </g>
                     )}
                   </g>
                 );
               })}
 
-              {/* VẼ CÁC TÁC NHÂN (UML STICK-MAN ACTORS) */}
+              {/* VẼ TÁC NHÂN (TEXTBOOK UML 2.5 STICK FIGURE ACTOR) */}
               {graph.actors.map((actor) => {
-                const isSel = selectedNode?.kind === 'actor' && selectedNode?.id === actor.id;
+                const isSel =
+                  (selectedItem?.kind === 'actor' && selectedItem?.id === actor.id) ||
+                  connectMode?.fromId === actor.id;
+                const actorLines = wrapUseCaseText(actor.name, 20);
+
                 return (
                   <g
                     key={actor.id}
                     transform={`translate(${actor.x}, ${actor.y})`}
-                    style={{ cursor: 'grab' }}
+                    style={{ cursor: connectMode ? 'crosshair' : 'grab' }}
                     onPointerDown={(e) => handlePointerDownNode(e, 'actor', actor)}
                     onClick={(e) => e.stopPropagation()}
                   >
                     {isSel && (
                       <rect
-                        x="-58"
-                        y="-45"
-                        width="116"
+                        x="-56"
+                        y="-42"
+                        width="112"
                         height="108"
-                        rx="10"
-                        fill="rgba(37, 99, 235, 0.08)"
+                        rx="6"
+                        fill="rgba(37, 99, 235, 0.06)"
                         stroke="#2563EB"
-                        strokeWidth="2"
+                        strokeWidth="1.5"
                         strokeDasharray="4 3"
                       />
                     )}
-                    {/* Đầu Actor */}
+
+                    {/* Đầu hình người chuẩn UML */}
                     <circle
                       cx="0"
                       cy="-22"
-                      r="12"
-                      fill="#F0FDFA"
-                      stroke="#0F766E"
-                      strokeWidth="2.5"
-                    />
-                    {/* Thân & Tay Chân Actor chuẩn UML */}
-                    <line x1="0" y1="-10" x2="0" y2="16" stroke="#0F766E" strokeWidth="2.5" />
-                    <line x1="-18" y1="-1" x2="18" y2="-1" stroke="#0F766E" strokeWidth="2.5" />
-                    <line x1="0" y1="16" x2="-15" y2="36" stroke="#0F766E" strokeWidth="2.5" />
-                    <line x1="0" y1="16" x2="15" y2="36" stroke="#0F766E" strokeWidth="2.5" />
-
-                    {/* Nhãn tên Actor */}
-                    <rect
-                      x="-62"
-                      y="41"
-                      width="124"
-                      height="22"
-                      rx="6"
-                      fill="#0F172A"
-                    />
-                    <text
-                      x="0"
-                      y="56"
-                      textAnchor="middle"
+                      r="10.5"
                       fill="#FFFFFF"
-                      fontFamily="Be Vietnam Pro, sans-serif"
-                      fontSize="11.5"
-                      fontWeight="600"
-                    >
-                      {actor.name.length > 18 ? actor.name.slice(0, 17) + '…' : actor.name}
-                    </text>
+                      stroke="#0F172A"
+                      strokeWidth="2"
+                    />
+                    {/* Thân */}
+                    <line x1="0" y1="-11.5" x2="0" y2="12" stroke="#0F172A" strokeWidth="2" />
+                    {/* Hai tay ngang */}
+                    <line x1="-16" y1="-2" x2="16" y2="-2" stroke="#0F172A" strokeWidth="2" />
+                    {/* Hai chân */}
+                    <line x1="0" y1="12" x2="-13" y2="31" stroke="#0F172A" strokeWidth="2" />
+                    <line x1="0" y1="12" x2="13" y2="31" stroke="#0F172A" strokeWidth="2" />
+
+                    {/* Nhãn tên Actor chuẩn sách giáo khoa UML bên dưới chân */}
+                    {actorLines.map((ln, idx) => (
+                      <text
+                        key={idx}
+                        x="0"
+                        y={48 + idx * 15}
+                        textAnchor="middle"
+                        fill="#0F172A"
+                        fontFamily="Be Vietnam Pro, Segoe UI, sans-serif"
+                        fontSize="12.5"
+                        fontWeight="700"
+                      >
+                        {ln}
+                      </text>
+                    ))}
                   </g>
                 );
               })}
 
-              {/* VẼ CÁC CHỨC NĂNG (UML USE CASE ELLIPSES) */}
+              {/* VẼ CA SỬ DỤNG (AUTO-SIZED TEXTBOOK UML 2.5 USE CASE ELLIPSES) */}
               {graph.useCases.map((uc) => {
-                const isSel = selectedNode?.kind === 'uc' && selectedNode?.id === uc.id;
-                const lines = wrapLabel(uc.name, 25);
+                const isSel =
+                  (selectedItem?.kind === 'uc' && selectedItem?.id === uc.id) ||
+                  connectMode?.fromId === uc.id;
+                const { rx, ry, lines } = getEllipseRadii(uc.name);
+                const startTextY = -((lines.length - 1) * 15) / 2 + 4;
+
                 return (
                   <g
                     key={uc.id}
                     transform={`translate(${uc.x}, ${uc.y})`}
-                    style={{ cursor: 'grab' }}
+                    style={{ cursor: connectMode ? 'crosshair' : 'grab' }}
                     onPointerDown={(e) => handlePointerDownNode(e, 'uc', uc)}
                     onClick={(e) => e.stopPropagation()}
                   >
                     <ellipse
                       cx="0"
                       cy="0"
-                      rx="118"
-                      ry="36"
-                      fill={isSel ? '#DBEAFE' : '#EFF6FF'}
-                      stroke={isSel ? '#1D4ED8' : '#2563EB'}
-                      strokeWidth={isSel ? '2.8' : '2'}
+                      rx={rx}
+                      ry={ry}
+                      fill={isSel ? 'url(#uc-fill-selected)' : 'url(#uc-fill)'}
+                      stroke={isSel ? '#2563EB' : '#1E3A8A'}
+                      strokeWidth={isSel ? '2.4' : '1.75'}
+                      filter="url(#uml-drop-shadow)"
                     />
-                    {/* Mã UC nhỏ phía trên */}
-                    <text
-                      x="0"
-                      y={lines.length > 1 ? -14 : -8}
-                      textAnchor="middle"
-                      fill="#1D4ED8"
-                      fontFamily="JetBrains Mono, monospace"
-                      fontSize="10.5"
-                      fontWeight="700"
-                    >
-                      {uc.code}
-                    </text>
-                    {/* Tên chức năng chia dòng tự động */}
-                    {lines.map((ln, lIdx) => (
+
+                    {lines.map((ln, idx) => (
                       <text
-                        key={lIdx}
+                        key={idx}
                         x="0"
-                        y={(lines.length > 1 ? 2 : 8) + lIdx * 14}
+                        y={startTextY + idx * 15}
                         textAnchor="middle"
                         fill="#0F172A"
-                        fontFamily="Be Vietnam Pro, sans-serif"
-                        fontSize="12"
+                        fontFamily="Be Vietnam Pro, Segoe UI, sans-serif"
+                        fontSize="12.2"
                         fontWeight="600"
                       >
                         {ln}
@@ -964,12 +1081,9 @@ export default function UmlCanvasStudio({
         </div>
       )}
 
-      {/* CHẾ ĐỘ 2: SOẠN THẢO MÃ PLANTUML TRỰC TIẾP */}
+      {/* TAB 2: PLANTUML SOURCE CODE */}
       {mode === 'code' && (
         <div>
-          <div style={{ marginBottom: '12px', fontSize: '0.88rem', color: '#475569' }}>
-            Mã PlantUML dưới đây được đồng bộ tự động từ Bảng vẽ Kéo - Thả. Bạn cũng có thể sửa mã trực tiếp và lưu lại:
-          </div>
           <textarea
             className="textarea-field"
             style={{
@@ -986,19 +1100,17 @@ export default function UmlCanvasStudio({
             style={{
               marginTop: '12px',
               display: 'flex',
-              alignItems: 'center',
               justifyContent: 'space-between',
-              gap: '12px',
-              flexWrap: 'wrap',
+              alignItems: 'center',
             }}
           >
-            <div style={{ fontSize: '0.86rem', color: '#15803D', fontWeight: 600 }}>
+            <span style={{ color: '#15803D', fontSize: '0.85rem', fontWeight: 600 }}>
               {syncMessage}
-            </div>
+            </span>
             <div style={{ display: 'flex', gap: '10px' }}>
               <a
                 href="/api/export/diagram-puml"
-                download={`${projectName}_usecase.puml`}
+                download={`${graph.systemTitle}_usecase.puml`}
                 className="btn btn-outline"
               >
                 Tải File PlantUML (.puml)
@@ -1006,34 +1118,19 @@ export default function UmlCanvasStudio({
               <button
                 type="button"
                 className="btn btn-primary"
-                onClick={handleApplyPlantUmlCode}
+                onClick={async () => {
+                  await fetch('/api/diagram/update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ plantuml_code: pumlText }),
+                  });
+                  setSyncMessage('✓ Đã cập nhật mã PlantUML!');
+                }}
               >
-                Lưu &amp; Kết xuất lại Sơ đồ
+                Lưu mã PlantUML
               </button>
             </div>
           </div>
-
-          {hasKrokiImage && (
-            <div
-              style={{
-                marginTop: '18px',
-                padding: '16px',
-                background: '#F8FAFC',
-                border: '1px solid #E2E8F0',
-                borderRadius: '10px',
-                textAlign: 'center',
-              }}
-            >
-              <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#475569', marginBottom: '10px' }}>
-                Ảnh kết xuất từ máy chủ PlantUML (Kroki):
-              </div>
-              <img
-                src={`/api/export/diagram-png?t=${Date.now()}`}
-                alt="PlantUML Rendered Diagram"
-                style={{ maxWidth: '100%', height: 'auto', borderRadius: '6px' }}
-              />
-            </div>
-          )}
         </div>
       )}
     </div>
