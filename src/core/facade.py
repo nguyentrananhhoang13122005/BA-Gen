@@ -46,10 +46,12 @@ class RequirementAnalysisFacade:
         )
         self.ambiguity_detector = AmbiguityDetector(
             llm_client=self.llm_client,
+            db_manager=self.db,
             strict_llm=strict_llm,
         )
         self.user_story_gen = UserStoryGenerator(
             llm_client=self.llm_client,
+            db_manager=self.db,
             strict_llm=strict_llm,
         )
         self.plantuml_exporter = PlantUMLExporter()

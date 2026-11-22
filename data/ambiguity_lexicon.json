@@ -21,8 +21,10 @@
   ],
   "actors_vi": [
     "người dùng", "khách hàng", "quản trị viên", "nhân viên", "hệ thống",
-    "kế toán", "bán hàng", "chuyên viên", "admin", "shipper", "tài xế",
-    "bác sĩ", "bệnh nhân", "học sinh", "giáo viên", "người mua", "người bán"
+    "kế toán", "bán hàng", "chuyên viên", "chuyên viên nhân sự", "nhân sự",
+    "quản lý trực tiếp", "quản lý", "thủ kho", "giảng viên", "sinh viên",
+    "admin", "shipper", "tài xế", "bác sĩ", "bệnh nhân", "học sinh",
+    "giáo viên", "người mua", "người bán", "ứng dụng"
   ],
   "actors_en": [
     "user", "customer", "admin", "administrator", "system", "employee",

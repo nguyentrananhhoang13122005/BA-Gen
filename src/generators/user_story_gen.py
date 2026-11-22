@@ -66,10 +66,12 @@ class UserStoryGenerator:
     def __init__(
         self,
         llm_client: Optional[MultiLLMClient] = None,
+        db_manager=None,
         strict_llm: bool = False,
-        batch_size: int = 6,
+        batch_size: int = 3,
     ):
         self.llm_client = llm_client
+        self.db = db_manager
         self.strict_llm = strict_llm
         self.batch_size = batch_size
 
@@ -450,15 +452,40 @@ class UserStoryGenerator:
         )
 
     def generate_stories_batch(self, requirements: List[RequirementDTO], lang: str = "vi") -> List[UserStoryDTO]:
-        """Sinh danh sách User Stories theo lô bằng LLM thật dựa trên dữ liệu thực tế."""
+        """Sinh danh sách User Stories phối hợp Local NLP + SQLite Cache + Groq/Cloud LLM."""
         if not requirements:
             return []
 
         if self.llm_client and self.llm_client.is_configured():
-            all_stories: List[UserStoryDTO] = []
+            results_by_id: dict[str, UserStoryDTO] = {}
+            uncached_reqs: List[RequirementDTO] = []
+
+            for req in requirements:
+                # 1. Kiểm tra SQLite Cache theo nội dung câu yêu cầu để không gọi lại API cho câu chưa đổi
+                if self.db is not None:
+                    cache_key = self.db.generate_cache_key(
+                        f"STORY::{req.raw_text}",
+                        self.llm_client.provider,
+                        self.llm_client.model_name,
+                    )
+                    cached_dict = self.db.get_cache(cache_key)
+                    if cached_dict:
+                        parsed_cached = self._parse_story_dict(cached_dict, req, lang)
+                        if parsed_cached:
+                            results_by_id[req.req_id] = parsed_cached
+                            continue
+
+                # 2. Với câu NFR đã rõ ràng, ưu tiên bóc tách trên máy để tiết kiệm hạn mức Token cho các câu FR chính
+                if req.req_type == "NFR":
+                    story_id = f"US-{req.req_id.replace('REQ-', '')}"
+                    results_by_id[req.req_id] = self._extract_story_from_text(req, story_id, lang)
+                    continue
+
+                uncached_reqs.append(req)
+
             try:
-                for i in range(0, len(requirements), self.batch_size):
-                    chunk = requirements[i:i + self.batch_size]
+                for i in range(0, len(uncached_reqs), self.batch_size):
+                    chunk = uncached_reqs[i:i + self.batch_size]
                     payload = [
                         {
                             "req_id": r.req_id,
@@ -488,14 +515,26 @@ class UserStoryGenerator:
                         item_data = story_map.get(req.req_id)
                         parsed = self._parse_story_dict(item_data, req, lang) if item_data else None
                         if parsed:
-                            all_stories.append(parsed)
+                            results_by_id[req.req_id] = parsed
+                            if self.db is not None and item_data:
+                                self.db.set_cache(
+                                    text=f"STORY::{req.raw_text}",
+                                    provider=self.llm_client.provider,
+                                    model_name=self.llm_client.model_name,
+                                    response_data=item_data,
+                                )
                         else:
                             story_id = f"US-{req.req_id.replace('REQ-', '')}"
-                            all_stories.append(self._extract_story_from_text(req, story_id, lang))
-                return all_stories
+                            results_by_id[req.req_id] = self._extract_story_from_text(req, story_id, lang)
             except Exception as exc:
                 if self.strict_llm:
                     raise RuntimeError(f"Lỗi khi gọi AI sinh kịch bản User Story: {str(exc)}") from exc
+
+            return [
+                results_by_id.get(req.req_id)
+                or self._extract_story_from_text(req, f"US-{req.req_id.replace('REQ-', '')}", lang)
+                for req in requirements
+            ]
 
         return [
             self._extract_story_from_text(req, f"US-{req.req_id.replace('REQ-', '')}", lang)

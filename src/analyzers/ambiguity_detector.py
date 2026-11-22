@@ -71,10 +71,12 @@ class AmbiguityDetector:
         self,
         lexicon_manager: Optional[NLPLexiconManager] = None,
         llm_client: Optional[MultiLLMClient] = None,
+        db_manager=None,
         strict_llm: bool = False,
     ):
         self.lexicon = lexicon_manager or NLPLexiconManager()
         self.llm_client = llm_client
+        self.db = db_manager
         self.strict_llm = strict_llm
 
     def scan_ambiguous_terms(self, text: str, lang: str = "vi") -> List[str]:
@@ -204,43 +206,72 @@ class AmbiguityDetector:
             return requirements
 
         if self.llm_client and self.llm_client.is_configured():
+            uncached_ambiguous: List[RequirementDTO] = []
+            for r in ambiguous_reqs:
+                if self.db is not None:
+                    cache_key = self.db.generate_cache_key(
+                        f"SMART::{r.raw_text}",
+                        self.llm_client.provider,
+                        self.llm_client.model_name,
+                    )
+                    cached = self.db.get_cache(cache_key)
+                    if cached and cached.get("smart_rewrite"):
+                        r.smart_rewrite = cached["smart_rewrite"]
+                        continue
+                uncached_ambiguous.append(r)
+
+            if not uncached_ambiguous:
+                return requirements
+
             try:
-                payload = [
-                    {
-                        "req_id": r.req_id,
-                        "raw_text": r.raw_text,
-                        "req_type": r.req_type,
-                        "nfr_category": r.nfr_category,
-                        "vague_terms": r.vague_terms,
-                        "missing_actor": r.missing_actor,
-                        "missing_metric": r.missing_metric,
+                batch_size = 4
+                for i in range(0, len(uncached_ambiguous), batch_size):
+                    chunk = uncached_ambiguous[i:i + batch_size]
+                    payload = [
+                        {
+                            "req_id": r.req_id,
+                            "raw_text": r.raw_text,
+                            "req_type": r.req_type,
+                            "vague_terms": r.vague_terms,
+                        }
+                        for r in chunk
+                    ]
+                    user_prompt = (
+                        f"Ngôn ngữ: {lang}\n"
+                        f"Viết lại chuẩn SMART ngắn gọn cho các câu sau:\n"
+                        f"{json.dumps(payload, ensure_ascii=False)}"
+                    )
+                    resp = self.llm_client.chat_completion(
+                        BATCH_SMART_SYSTEM_PROMPT,
+                        user_prompt,
+                        temperature=0.15,
+                    )
+                    data = json.loads(resp)
+                    rewrite_map = {
+                        item.get("req_id"): item.get("smart_rewrite", "").strip()
+                        for item in data.get("rewrites", [])
+                        if item.get("req_id") and item.get("smart_rewrite")
                     }
-                    for r in ambiguous_reqs
-                ]
-                user_prompt = (
-                    f"Ngôn ngữ: {lang}\n"
-                    f"Danh sách các câu yêu cầu cần viết lại chuẩn SMART dựa trên nội dung thực tế:\n"
-                    f"{json.dumps(payload, ensure_ascii=False, indent=2)}"
-                )
-                resp = self.llm_client.chat_completion(BATCH_SMART_SYSTEM_PROMPT, user_prompt, temperature=0.15)
-                data = json.loads(resp)
-                rewrite_map = {
-                    item.get("req_id"): item.get("smart_rewrite", "").strip()
-                    for item in data.get("rewrites", [])
-                    if item.get("req_id") and item.get("smart_rewrite")
-                }
-                for r in ambiguous_reqs:
-                    if r.req_id in rewrite_map and len(rewrite_map[r.req_id]) > 10:
-                        r.smart_rewrite = rewrite_map[r.req_id]
-                    else:
-                        r.smart_rewrite = self._build_contextual_smart_rewrite(r, lang)
+                    for r in chunk:
+                        if r.req_id in rewrite_map and len(rewrite_map[r.req_id]) > 10:
+                            r.smart_rewrite = rewrite_map[r.req_id]
+                            if self.db is not None:
+                                self.db.set_cache(
+                                    text=f"SMART::{r.raw_text}",
+                                    provider=self.llm_client.provider,
+                                    model_name=self.llm_client.model_name,
+                                    response_data={"smart_rewrite": r.smart_rewrite},
+                                )
+                        else:
+                            r.smart_rewrite = self._build_contextual_smart_rewrite(r, lang)
                 return requirements
             except Exception as exc:
                 if self.strict_llm:
                     raise RuntimeError(f"Lỗi khi gọi AI phân tích SMART: {str(exc)}") from exc
 
         for r in ambiguous_reqs:
-            r.smart_rewrite = self._build_contextual_smart_rewrite(r, lang)
+            if not r.smart_rewrite or r.smart_rewrite == r.raw_text:
+                r.smart_rewrite = self._build_contextual_smart_rewrite(r, lang)
 
         return requirements
 

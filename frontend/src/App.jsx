@@ -280,7 +280,7 @@ export default function App() {
     setErrorMsg('');
     if (newProv === 'local_nlp') setModelName('TF-IDF + LinearSVC (Bilingual NLP)');
     else if (envDefaults.models?.[newProv]) setModelName(envDefaults.models[newProv]);
-    else if (newProv === 'groq') setModelName('llama-3.3-70b-versatile');
+    else if (newProv === 'groq') setModelName('qwen/qwen3.8-27b');
     else if (newProv === 'gemini') setModelName('gemini-1.5-flash');
     else if (newProv === 'openrouter') setModelName('meta-llama/llama-3.3-70b-instruct:free');
     else if (newProv === 'ollama') setModelName('llama3');
@@ -1216,10 +1216,185 @@ export default function App() {
                 />
 
                 <div className="card">
-                  <h3 style={{ fontSize: '1.05rem', fontWeight: 700, marginBottom: '12px' }}>
-                    Xem trước Nội dung Báo cáo Đặc tả Phần mềm
-                  </h3>
-                  <div className="doc-preview-box">{result.srs_markdown}</div>
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: '10px',
+                      marginBottom: '14px',
+                      paddingBottom: '10px',
+                      borderBottom: '1px solid #E2E8F0',
+                    }}
+                  >
+                    <div>
+                      <h3 style={{ fontSize: '1.08rem', fontWeight: 700, color: '#0F172A' }}>
+                        Xem trước Nội dung Báo cáo Đặc tả Phần mềm (Chuẩn IEEE 830 / ISO 29148)
+                      </h3>
+                      <p style={{ fontSize: '0.83rem', color: '#64748B' }}>
+                        Đã trình bày sẵn thành văn bản &amp; bảng biểu sạch sẽ (không còn ký tự Markdown #, **, | :--- |)
+                      </p>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <a href="/api/export/srs-docx" className="btn btn-primary" style={{ padding: '7px 14px', fontSize: '0.83rem' }}>
+                        <Icon name="download" size={16} />
+                        <span>Tải File Word (.docx)</span>
+                      </a>
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      background: '#FFFFFF',
+                      border: '1px solid #CBD5E1',
+                      borderRadius: '10px',
+                      padding: '24px 28px',
+                      maxHeight: '620px',
+                      overflowY: 'auto',
+                      color: '#1E293B',
+                      lineHeight: 1.65,
+                    }}
+                  >
+                    <div style={{ borderBottom: '2px solid #1E3A8A', paddingBottom: '14px', marginBottom: '18px' }}>
+                      <div style={{ fontSize: '1.3rem', fontWeight: 800, color: '#1E3A8A', marginBottom: '6px' }}>
+                        TÀI LIỆU ĐẶC TẢ YÊU CẦU PHẦN MỀM (SRS)
+                      </div>
+                      <div style={{ fontSize: '0.9rem', color: '#334155' }}>
+                        <strong>Dự án:</strong> {result.project?.project_name || 'Hệ thống Phần mềm'} &nbsp;|&nbsp;{' '}
+                        <strong>Tiêu chuẩn:</strong> IEEE 830-1998 / ISO/IEC/IEEE 29148:2018 &nbsp;|&nbsp;{' '}
+                        <strong>Ngôn ngữ:</strong> {result.project?.language === 'en' ? 'English' : 'Tiếng Việt'}
+                      </div>
+                    </div>
+
+                    {/* Mục 1 */}
+                    <h4 style={{ fontSize: '1.02rem', fontWeight: 700, color: '#1E3A8A', marginBottom: '6px' }}>
+                      1. Giới thiệu &amp; Phạm vi Hệ thống
+                    </h4>
+                    <p style={{ fontSize: '0.92rem', marginBottom: '18px', color: '#334155' }}>
+                      Tài liệu này xác định các đặc tả yêu cầu đã chuẩn hóa cho dự án{' '}
+                      <strong>{result.project?.project_name || 'Hệ thống Phần mềm'}</strong>. Mục đích nhằm làm rõ phạm vi
+                      chức năng, tiêu chuẩn chất lượng phi chức năng (ISO/IEC 25010) và kịch bản kiểm thử nghiệm thu.
+                    </p>
+
+                    {/* Mục 2 */}
+                    <h4 style={{ fontSize: '1.02rem', fontWeight: 700, color: '#1E3A8A', marginBottom: '8px' }}>
+                      2. Các Tác nhân Hệ thống (System Actors)
+                    </h4>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '20px' }}>
+                      {Array.from(new Set(result.user_stories.map((u) => u.role).filter(Boolean))).map((roleName) => (
+                        <span key={roleName} className="badge badge-fr" style={{ fontSize: '0.85rem', padding: '5px 12px' }}>
+                          👤 {roleName}
+                        </span>
+                      ))}
+                    </div>
+
+                    {/* Mục 3: Bảng Yêu cầu Chức năng (FR) */}
+                    <h4 style={{ fontSize: '1.02rem', fontWeight: 700, color: '#1E3A8A', marginBottom: '8px' }}>
+                      3. Danh mục Yêu cầu Chức năng (Functional Requirements —{' '}
+                      {result.requirements.filter((r) => r.req_type === 'FR').length} yêu cầu)
+                    </h4>
+                    <div style={{ overflowX: 'auto', marginBottom: '22px' }}>
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th style={{ width: '90px' }}>Mã YC</th>
+                            <th>Nội dung Đặc tả Yêu cầu (Đã chuẩn hóa)</th>
+                            <th style={{ width: '110px', textAlign: 'center' }}>Độ tin cậy</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {result.requirements
+                            .filter((r) => r.req_type === 'FR')
+                            .map((fr) => (
+                              <tr key={fr.req_id}>
+                                <td>
+                                  <strong>{fr.req_id}</strong>
+                                </td>
+                                <td>{fr.is_ambiguous && fr.smart_rewrite ? fr.smart_rewrite : fr.raw_text}</td>
+                                <td style={{ textAlign: 'center' }}>{Math.round((fr.confidence || 0.95) * 100)}%</td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Mục 4: Bảng Yêu cầu Phi chức năng (NFR) */}
+                    <h4 style={{ fontSize: '1.02rem', fontWeight: 700, color: '#1E3A8A', marginBottom: '8px' }}>
+                      4. Danh mục Yêu cầu Phi chức năng (Non-Functional Requirements - ISO 25010 —{' '}
+                      {result.requirements.filter((r) => r.req_type === 'NFR').length} yêu cầu)
+                    </h4>
+                    <div style={{ overflowX: 'auto', marginBottom: '22px' }}>
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th style={{ width: '90px' }}>Mã YC</th>
+                            <th style={{ width: '165px' }}>Nhóm Chất lượng</th>
+                            <th>Nội dung Đặc tả (Đã chuẩn hóa SMART)</th>
+                            <th style={{ width: '130px', textAlign: 'center' }}>Chỉ số Đo lường</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {result.requirements
+                            .filter((r) => r.req_type === 'NFR')
+                            .map((nfr) => (
+                              <tr key={nfr.req_id}>
+                                <td>
+                                  <strong>{nfr.req_id}</strong>
+                                </td>
+                                <td>
+                                  <span className="badge badge-nfr">
+                                    {ISO_VI_MAP[nfr.nfr_category] || nfr.nfr_category || 'Chung'}
+                                  </span>
+                                </td>
+                                <td>{nfr.smart_rewrite || nfr.raw_text}</td>
+                                <td style={{ textAlign: 'center' }}>
+                                  <span className={`badge ${nfr.missing_metric ? 'badge-warn' : 'badge-ok'}`}>
+                                    {nfr.missing_metric ? 'Đã bổ sung SMART' : 'Đạt chuẩn'}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Mục 5: Bảng Ánh xạ Actor – Use Case UML 2.5 */}
+                    <h4 style={{ fontSize: '1.02rem', fontWeight: 700, color: '#1E3A8A', marginBottom: '8px' }}>
+                      5. Bảng Ánh xạ Tác nhân – Ca sử dụng (Actor – Use Case Mapping - UML 2.5)
+                    </h4>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th style={{ width: '90px' }}>Mã YC</th>
+                            <th style={{ width: '190px' }}>Tác nhân (Actor)</th>
+                            <th>Ca sử dụng Chính (Use Case)</th>
+                            <th>Ca sử dụng Con («include» / «extend»)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {result.user_stories.map((us) => {
+                            const subs = (us.sub_usecases || [])
+                              .map((s) => `«${s.rel_type}» ${s.target_name}`)
+                              .join(', ');
+                            return (
+                              <tr key={us.story_id}>
+                                <td>
+                                  <strong>{us.req_id}</strong>
+                                </td>
+                                <td>{us.role}</td>
+                                <td>
+                                  <strong>{us.puml_usecase_name}</strong>
+                                </td>
+                                <td>{subs || '—'}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

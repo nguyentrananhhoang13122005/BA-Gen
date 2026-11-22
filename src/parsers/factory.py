@@ -97,7 +97,10 @@ class DocxDocumentParser(IDocumentParser):
 
                 joined_lower = " | ".join(unique_cells).lower()
                 # Bỏ qua bảng bìa tài liệu (Cover Table)
-                if "tài liệu phân tích nghiệp vụ" in joined_lower and "phiên bản" in joined_lower:
+                if (
+                    ("tài liệu phân tích nghiệp vụ" in joined_lower and "phiên bản" in joined_lower)
+                    or ("mã dự án" in joined_lower and "ngôn ngữ" in joined_lower)
+                ):
                     continue
                 # Bỏ qua dòng tiêu đề bảng (Table Header Row)
                 if sum(1 for m in table_header_markers if m in joined_lower) >= 2:

@@ -212,7 +212,7 @@ function buildDualSideGraph(
       id: `actor_${idx + 1}`,
       name,
       side: isLeft ? 'left' : 'right',
-      x: isLeft ? 88 : 932,
+      x: isLeft ? 92 : 1168,
       y: 160,
     });
   });
@@ -272,19 +272,19 @@ function buildDualSideGraph(
 
   if (singleSideMode) {
     leftUcs.forEach((uc, i) => {
-      uc.x = showSubUseCases ? 360 : 510;
-      uc.y = 115 + i * 92;
+      uc.x = showSubUseCases ? 430 : 630;
+      uc.y = 115 + i * 96;
     });
   } else {
-    // Cột Trái nối thẳng với Primary Actor Trái
+    // Cột Trái nối thẳng với Primary Actor Trái (tâm x=345 khi bật sub-UC, cách cột giữa 285px nên không bao giờ chạm hình elip)
     leftUcs.forEach((uc, i) => {
-      uc.x = showSubUseCases ? 335 : 365;
-      uc.y = 115 + i * 94;
+      uc.x = showSubUseCases ? 345 : 435;
+      uc.y = 115 + i * 98;
     });
-    // Cột Phải nối thẳng với Secondary Actor Phải
+    // Cột Phải nối thẳng với Secondary Actor Phải (tâm x=915 khi bật sub-UC, cách cột giữa 285px)
     rightUcs.forEach((uc, i) => {
-      uc.x = showSubUseCases ? 685 : 655;
-      uc.y = 115 + i * 94;
+      uc.x = showSubUseCases ? 915 : 825;
+      uc.y = 115 + i * 98;
     });
   }
 
@@ -307,7 +307,7 @@ function buildDualSideGraph(
           actorName: parentUc.actorName,
           side: 'center',
           isSubUseCase: true,
-          x: singleSideMode ? 655 : 510,
+          x: singleSideMode ? 825 : 630,
           y: parentUc.y,
         };
         centerSubUcs.push(subNode);
@@ -325,14 +325,15 @@ function buildDualSideGraph(
     // Chống trùng tọa độ Y ở cột giữa cho các Use Case con
     centerSubUcs.sort((a, b) => a.y - b.y);
     for (let i = 1; i < centerSubUcs.length; i++) {
-      if (centerSubUcs[i].y - centerSubUcs[i - 1].y < 76) {
-        centerSubUcs[i].y = centerSubUcs[i - 1].y + 76;
+      if (centerSubUcs[i].y - centerSubUcs[i - 1].y < 86) {
+        centerSubUcs[i].y = centerSubUcs[i - 1].y + 86;
       }
     }
   }
 
-  const maxRows = Math.max(leftUcs.length, rightUcs.length, centerSubUcs.length, 1);
-  const totalH = Math.max(115 + maxRows * 94 + 65, 440);
+  const maxSubY = centerSubUcs.length ? Math.max(...centerSubUcs.map((u) => u.y)) : 0;
+  const maxMainRows = Math.max(leftUcs.length, rightUcs.length, 1);
+  const totalH = Math.max(115 + maxMainRows * 98 + 65, maxSubY + 95, 440);
 
   // Đặt tọa độ Y của từng Actor đúng bằng trung bình cộng Y của nhóm Use Case thuộc Actor đó!
   const actors = Array.from(actorMap.values());
@@ -455,6 +456,8 @@ export default function UmlCanvasStudio({
   const [dragging, setDragging] = useState(null);
   const [connectMode, setConnectMode] = useState(null);
   const [zoom, setZoom] = useState(1);
+  const [tableZoom, setTableZoom] = useState(1);
+  const [showAdvancedTools, setShowAdvancedTools] = useState(false);
   const [mode, setMode] = useState('canvas');
   const [pumlText, setPumlText] = useState(initialPlantUmlCode);
   const [syncMessage, setSyncMessage] = useState('');
@@ -479,7 +482,7 @@ export default function UmlCanvasStudio({
     }).catch(() => {});
   };
 
-  const canvasWidth = 1020;
+  const canvasWidth = 1260;
   const canvasHeight = useMemo(() => {
     const maxA = graph.actors.length ? Math.max(...graph.actors.map((a) => a.y)) : 280;
     const maxU = graph.useCases.length ? Math.max(...graph.useCases.map((u) => u.y)) : 280;
@@ -579,7 +582,7 @@ export default function UmlCanvasStudio({
       id: `actor_${Date.now()}`,
       name: `Actor mới ${idx}`,
       side: isLeft ? 'left' : 'right',
-      x: isLeft ? 88 : 932,
+      x: isLeft ? 92 : 1168,
       y: Math.round(canvasHeight / 2),
     };
     const nextGraph = { ...graph, actors: [...graph.actors, newActor] };
@@ -596,7 +599,7 @@ export default function UmlCanvasStudio({
       code: `UC-${String(idx).padStart(2, '0')}`,
       name: `Chức năng mới ${idx}`,
       side: 'left',
-      x: 510,
+      x: 630,
       y: Math.min(canvasHeight - 80, 120 + (idx - 1) * 85),
     };
     const nextLinks = firstActor
@@ -745,7 +748,7 @@ export default function UmlCanvasStudio({
 
   return (
     <div className="card" style={{ marginBottom: '22px' }}>
-      {/* HEADER BAR */}
+      {/* HEADER BAR - GỌN GÀNG, DỄ HIỂU */}
       <div
         style={{
           display: 'flex',
@@ -760,149 +763,301 @@ export default function UmlCanvasStudio({
       >
         <div>
           <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0F172A' }}>
-            Sơ đồ Chức năng UML 2.5 Tương tác (Bố cục 2 bên không cắt chéo dây)
+            Sơ đồ Chức năng Hệ thống (Ai làm được việc gì?)
           </h3>
           <p style={{ fontSize: '0.84rem', color: '#64748B' }}>
-            Lọc xem theo từng nhóm Người dùng (Actor) bên dưới để sơ đồ luôn thoáng đãng, hoặc kéo-thả trực tiếp bằng chuột
+            Bấm chọn từng nhóm người dùng để xem riêng chức năng của họ, hoặc dùng nút <strong>− / +</strong> để thu nhỏ, phóng to toàn bộ sơ đồ
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          {/* CỤM NÚT ZOOM IN / ZOOM OUT NỔI BẬT NGAY TRÊN ĐẦU */}
+          {mode === 'canvas' ? (
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                background: '#EFF6FF',
+                border: '1.5px solid #93C5FD',
+                borderRadius: '8px',
+                padding: '4px 8px',
+              }}
+            >
+              <button
+                type="button"
+                className="btn btn-outline"
+                title="Thu nhỏ sơ đồ"
+                style={{
+                  padding: '4px 10px',
+                  fontSize: '0.95rem',
+                  fontWeight: 800,
+                  background: '#FFFFFF',
+                  minWidth: '34px',
+                }}
+                onClick={() => setZoom((z) => Math.max(0.5, Number((z - 0.15).toFixed(2))))}
+              >
+                −
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline"
+                title="Bấm để đưa về kích thước vừa khít màn hình (100%)"
+                style={{
+                  padding: '4px 10px',
+                  fontSize: '0.8rem',
+                  fontWeight: 700,
+                  background: zoom === 1 ? '#2563EB' : '#FFFFFF',
+                  color: zoom === 1 ? '#FFFFFF' : '#1E3A8A',
+                  borderColor: zoom === 1 ? '#2563EB' : '#CBD5E1',
+                }}
+                onClick={() => setZoom(1)}
+              >
+                {Math.round(zoom * 100)}% (Vừa khung)
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline"
+                title="Phóng to sơ đồ"
+                style={{
+                  padding: '4px 10px',
+                  fontSize: '0.95rem',
+                  fontWeight: 800,
+                  background: '#FFFFFF',
+                  minWidth: '34px',
+                }}
+                onClick={() => setZoom((z) => Math.min(2.0, Number((z + 0.15).toFixed(2))))}
+              >
+                +
+              </button>
+            </div>
+          ) : (
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                background: '#EFF6FF',
+                border: '1.5px solid #93C5FD',
+                borderRadius: '8px',
+                padding: '4px 8px',
+              }}
+            >
+              <button
+                type="button"
+                className="btn btn-outline"
+                style={{ padding: '4px 10px', fontSize: '0.95rem', fontWeight: 800, background: '#FFFFFF' }}
+                onClick={() => setTableZoom((z) => Math.max(0.75, Number((z - 0.1).toFixed(2))))}
+              >
+                −
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline"
+                style={{ padding: '4px 10px', fontSize: '0.8rem', fontWeight: 700, background: '#FFFFFF' }}
+                onClick={() => setTableZoom(1)}
+              >
+                Cỡ bảng: {Math.round(tableZoom * 100)}%
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline"
+                style={{ padding: '4px 10px', fontSize: '0.95rem', fontWeight: 800, background: '#FFFFFF' }}
+                onClick={() => setTableZoom((z) => Math.min(1.4, Number((z + 0.1).toFixed(2))))}
+              >
+                +
+              </button>
+            </div>
+          )}
+
           <button
             type="button"
-            className={`filter-tab ${mode === 'canvas' ? 'active' : ''}`}
-            onClick={() => setMode('canvas')}
+            className="btn btn-primary"
+            style={{ padding: '7px 14px', fontSize: '0.83rem' }}
+            onClick={handleDownloadPng}
           >
-            Bản vẽ UML Tương tác
+            Tải Ảnh Sơ đồ (.png)
           </button>
+
           <button
             type="button"
-            className={`filter-tab ${mode === 'mapping' ? 'active' : ''}`}
-            onClick={() => setMode('mapping')}
+            className={`btn ${showAdvancedTools ? 'btn-primary' : 'btn-outline'}`}
+            style={{
+              padding: '7px 12px',
+              fontSize: '0.82rem',
+              background: showAdvancedTools ? '#1E3A8A' : '#FFFFFF',
+              color: showAdvancedTools ? '#FFFFFF' : '#334155',
+            }}
+            onClick={() => setShowAdvancedTools((prev) => !prev)}
           >
-            Phần 1: Bảng ánh xạ Actor – Use Case
-          </button>
-          <button
-            type="button"
-            className={`filter-tab ${mode === 'code' ? 'active' : ''}`}
-            onClick={() => setMode('code')}
-          >
-            Phần 2: Mã PlantUML (@startuml)
+            {showAdvancedTools ? '▲ Ẩn công cụ chỉnh sửa' : '⚙️ Tùy chọn & Chỉnh sửa sơ đồ'}
           </button>
         </div>
       </div>
 
-      {mode === 'canvas' && (
-        <div>
-          {/* ACTOR / SUB-DIAGRAM FILTER BAR (CHỐNG RỐI MẮT KHI TÀI LIỆU DÀI) */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              flexWrap: 'wrap',
-              marginBottom: '12px',
-              padding: '10px 14px',
-              background: '#EFF6FF',
-              border: '1px solid #BFDBFE',
-              borderRadius: '10px',
-            }}
-          >
-            <span style={{ fontSize: '0.83rem', fontWeight: 700, color: '#1E3A8A' }}>
-              Chế độ hiển thị sơ đồ:
-            </span>
+      {/* THANH LỌC THEO NGƯỜI DÙNG (ĐƠN GIẢN, DỄ HIỂU) */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          flexWrap: 'wrap',
+          marginBottom: '12px',
+          padding: '10px 14px',
+          background: '#F8FAFC',
+          border: '1px solid #E2E8F0',
+          borderRadius: '10px',
+        }}
+      >
+        <span style={{ fontSize: '0.83rem', fontWeight: 700, color: '#334155' }}>
+          Xem theo người dùng:
+        </span>
+        <button
+          type="button"
+          className={`filter-tab ${actorFilter === 'core' ? 'active' : ''}`}
+          style={{ padding: '5px 12px', fontSize: '0.8rem' }}
+          onClick={() => setActorFilter('core')}
+        >
+          ★ Tóm tắt ({Math.min(allFunctionalStories.length, 10)} chức năng chính)
+        </button>
+
+        {uniqueActors.map((actName) => {
+          const cnt = allFunctionalStories.filter(
+            (u) => (u.role || 'Người dùng').trim() === actName
+          ).length;
+          return (
             <button
+              key={actName}
               type="button"
-              className={`filter-tab ${actorFilter === 'core' ? 'active' : ''}`}
+              className={`filter-tab ${actorFilter === actName ? 'active' : ''}`}
               style={{ padding: '5px 12px', fontSize: '0.8rem' }}
-              onClick={() => setActorFilter('core')}
+              onClick={() => setActorFilter(actName)}
             >
-              ★ Tóm tắt Cốt lõi ({Math.min(allFunctionalStories.length, 10)} chức năng chính)
+              👤 {actName} ({cnt})
             </button>
+          );
+        })}
 
-            {uniqueActors.map((actName) => {
-              const cnt = allFunctionalStories.filter(
-                (u) => (u.role || 'Người dùng').trim() === actName
-              ).length;
-              return (
-                <button
-                  key={actName}
-                  type="button"
-                  className={`filter-tab ${actorFilter === actName ? 'active' : ''}`}
-                  style={{ padding: '5px 12px', fontSize: '0.8rem' }}
-                  onClick={() => setActorFilter(actName)}
-                >
-                  Theo: {actName} ({cnt})
-                </button>
-              );
-            })}
+        {allFunctionalStories.length > 10 && (
+          <button
+            type="button"
+            className={`filter-tab ${actorFilter === 'all' ? 'active' : ''}`}
+            style={{ padding: '5px 12px', fontSize: '0.8rem' }}
+            onClick={() => setActorFilter('all')}
+          >
+            Xem tất cả ({allFunctionalStories.length})
+          </button>
+        )}
 
-            {allFunctionalStories.length > 10 && (
-              <button
-                type="button"
-                className={`filter-tab ${actorFilter === 'all' ? 'active' : ''}`}
-                style={{ padding: '5px 12px', fontSize: '0.8rem' }}
-                onClick={() => setActorFilter('all')}
-              >
-                Tất cả ({allFunctionalStories.length})
-              </button>
-            )}
+        <button
+          type="button"
+          className={`filter-tab ${showSubUseCases ? 'active' : ''}`}
+          style={{
+            padding: '5px 12px',
+            fontSize: '0.8rem',
+            marginLeft: 'auto',
+            borderColor: showSubUseCases ? '#2563EB' : '#CBD5E1',
+          }}
+          onClick={() => setShowSubUseCases((prev) => !prev)}
+        >
+          {showSubUseCases
+            ? '✓ Đang hiện: Bước xử lý phụ («include» / «extend»)'
+            : '+ Hiện thêm bước xử lý phụ («include» / «extend»)'}
+        </button>
+      </div>
 
+      {/* GIẢI THÍCH NGẮN GỌN KHI BẬT BƯỚC PHỤ INCLUDE / EXTEND */}
+      {showSubUseCases && (
+        <div
+          style={{
+            background: '#FFFBEB',
+            border: '1px solid #FDE68A',
+            borderRadius: '8px',
+            padding: '8px 14px',
+            marginBottom: '12px',
+            fontSize: '0.82rem',
+            color: '#92400E',
+            display: 'flex',
+            gap: '18px',
+            flexWrap: 'wrap',
+          }}
+        >
+          <span>
+            💡 <strong>Cách đọc ký hiệu UML trên mũi tên nét đứt:</strong>
+          </span>
+          <span>
+            • <code>«include»</code> = <strong>Bước bắt buộc đi kèm</strong> (làm chức năng chính thì luôn chạy bước này)
+          </span>
+          <span>
+            • <code>«extend»</code> = <strong>Bước mở rộng tùy chọn</strong> (chỉ chạy khi người dùng bấm chọn thêm)
+          </span>
+        </div>
+      )}
+
+      {/* KHUNG CÔNG CỤ CHỈNH SỬA & CHẾ ĐỘ NÂNG CAO (CHỈ HIỆN KHI NGƯỜI DÙNG BẤM MỞ) */}
+      {showAdvancedTools && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '10px',
+            flexWrap: 'wrap',
+            background: '#EFF6FF',
+            border: '1px solid #BFDBFE',
+            borderRadius: '10px',
+            padding: '10px 14px',
+            marginBottom: '12px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
             <button
               type="button"
-              className={`filter-tab ${showSubUseCases ? 'active' : ''}`}
-              style={{
-                padding: '5px 12px',
-                fontSize: '0.8rem',
-                marginLeft: 'auto',
-                borderColor: showSubUseCases ? '#2563EB' : '#94A3B8',
-              }}
-              onClick={() => setShowSubUseCases((prev) => !prev)}
+              className={`filter-tab ${mode === 'canvas' ? 'active' : ''}`}
+              onClick={() => setMode('canvas')}
             >
-              {showSubUseCases
-                ? '✓ Đang bật: Phân tách Use Case con («include» / «extend»)'
-                : '+ Hiện Use Case con («include» / «extend»)'}
+              1. Bản vẽ Sơ đồ
+            </button>
+            <button
+              type="button"
+              className={`filter-tab ${mode === 'mapping' ? 'active' : ''}`}
+              onClick={() => setMode('mapping')}
+            >
+              2. Bảng tổng hợp Người dùng – Chức năng
+            </button>
+            <button
+              type="button"
+              className={`filter-tab ${mode === 'code' ? 'active' : ''}`}
+              onClick={() => setMode('code')}
+            >
+              3. Mã kỹ thuật PlantUML (@startuml)
             </button>
           </div>
 
-          {/* DRAWING & EXPORT TOOLBAR */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '10px',
-              flexWrap: 'wrap',
-              background: '#F8FAFC',
-              border: '1px solid #CBD5E1',
-              borderRadius: '10px',
-              padding: '10px 14px',
-              marginBottom: '12px',
-            }}
-          >
+          {mode === 'canvas' && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
               <button
                 type="button"
                 className="btn btn-outline"
-                style={{ padding: '7px 12px', fontSize: '0.83rem', background: '#FFFFFF' }}
+                style={{ padding: '6px 11px', fontSize: '0.8rem', background: '#FFFFFF' }}
                 onClick={handleAddActor}
               >
-                + Thêm Actor
+                + Thêm Người dùng
               </button>
               <button
                 type="button"
                 className="btn btn-outline"
-                style={{ padding: '7px 12px', fontSize: '0.83rem', background: '#FFFFFF' }}
+                style={{ padding: '6px 11px', fontSize: '0.8rem', background: '#FFFFFF' }}
                 onClick={handleAddUseCase}
               >
-                + Thêm Use Case
+                + Thêm Chức năng
               </button>
               <button
                 type="button"
                 className={`btn ${connectMode ? 'btn-primary' : 'btn-outline'}`}
                 style={{
-                  padding: '7px 12px',
-                  fontSize: '0.83rem',
+                  padding: '6px 11px',
+                  fontSize: '0.8rem',
                   background: connectMode ? '#2563EB' : '#FFFFFF',
                 }}
                 onClick={() =>
@@ -911,70 +1066,45 @@ export default function UmlCanvasStudio({
                   )
                 }
               >
-                {connectMode ? '✕ Hủy kẻ đường nối' : '⎯ Nối dây trên hình'}
+                {connectMode ? '✕ Hủy nối dây' : '⎯ Nối thêm dây'}
               </button>
 
               {connectMode && (
                 <select
                   className="select-field"
-                  style={{ width: 'auto', padding: '6px 10px', fontSize: '0.82rem' }}
+                  style={{ width: 'auto', padding: '5px 10px', fontSize: '0.8rem' }}
                   value={connectMode.type}
                   onChange={(e) => setConnectMode({ ...connectMode, type: e.target.value })}
                 >
-                  <option value="association">Kiểu: Đường nối Actor — Use Case</option>
-                  <option value="include">Kiểu: --«include»--&gt;</option>
-                  <option value="extend">Kiểu: --«extend»--&gt;</option>
+                  <option value="association">Nối Người dùng — Chức năng</option>
+                  <option value="include">Bước bắt buộc (--«include»--&gt;)</option>
+                  <option value="extend">Bước tùy chọn (--«extend»--&gt;)</option>
                 </select>
               )}
 
               <button
                 type="button"
                 className="btn btn-outline"
-                style={{ padding: '7px 12px', fontSize: '0.82rem', background: '#FFFFFF' }}
+                style={{ padding: '6px 11px', fontSize: '0.8rem', background: '#FFFFFF' }}
                 onClick={handleResetLayout}
               >
-                Căn chỉnh lại
-              </button>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                className="btn btn-outline"
-                style={{ padding: '6px 10px', fontSize: '0.8rem', background: '#FFFFFF' }}
-                onClick={() => setZoom((z) => Math.max(0.75, Number((z - 0.1).toFixed(2))))}
-              >
-                -
-              </button>
-              <span style={{ fontSize: '0.82rem', fontWeight: 700, minWidth: '42px', textAlign: 'center' }}>
-                {Math.round(zoom * 100)}%
-              </span>
-              <button
-                type="button"
-                className="btn btn-outline"
-                style={{ padding: '6px 10px', fontSize: '0.8rem', background: '#FFFFFF' }}
-                onClick={() => setZoom((z) => Math.min(1.35, Number((z + 0.1).toFixed(2))))}
-              >
-                +
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                style={{ padding: '7px 14px', fontSize: '0.83rem' }}
-                onClick={handleDownloadPng}
-              >
-                Tải Ảnh Sơ đồ (.png)
+                Sắp xếp lại
               </button>
               <button
                 type="button"
                 className="btn btn-outline"
-                style={{ padding: '7px 12px', fontSize: '0.82rem', background: '#FFFFFF' }}
+                style={{ padding: '6px 11px', fontSize: '0.8rem', background: '#FFFFFF' }}
                 onClick={handleDownloadSvg}
               >
-                Tải Vector (.svg)
+                Tải file Vector (.svg)
               </button>
             </div>
-          </div>
+          )}
+        </div>
+      )}
+
+      {mode === 'canvas' && (
+        <div>
 
           {connectMode && (
             <div
@@ -1069,21 +1199,107 @@ export default function UmlCanvasStudio({
           {/* DUAL-SIDE STARUML CANVAS (ACTORS ON LEFT & RIGHT, SYSTEM IN CENTER) */}
           <div
             style={{
+              position: 'relative',
               background: '#F1F5F9',
               border: '1px solid #CBD5E1',
               borderRadius: '10px',
               padding: '16px',
               overflow: 'auto',
-              maxHeight: '680px',
+              maxHeight: '720px',
             }}
           >
+            {/* NÚT CỘNG / TRỪ ZOOM NỔI TRỰC TIẾP GÓC PHẢI TRÊN BẢNG VẼ */}
+            <div
+              style={{
+                position: 'sticky',
+                top: '0px',
+                zIndex: 5,
+                display: 'flex',
+                justifyContent: 'flex-end',
+                marginBottom: '8px',
+                pointerEvents: 'none',
+              }}
+            >
+              <div
+                style={{
+                  pointerEvents: 'auto',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'rgba(255, 255, 255, 0.96)',
+                  border: '1.5px solid #93C5FD',
+                  borderRadius: '999px',
+                  padding: '4px 10px',
+                  boxShadow: '0 2px 8px rgba(15, 23, 42, 0.12)',
+                }}
+              >
+                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569' }}>
+                  Phóng to / Thu nhỏ:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setZoom((z) => Math.max(0.5, Number((z - 0.15).toFixed(2))))}
+                  style={{
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '50%',
+                    border: '1px solid #CBD5E1',
+                    background: '#F8FAFC',
+                    fontWeight: 800,
+                    fontSize: '1rem',
+                    cursor: 'pointer',
+                    lineHeight: 1,
+                  }}
+                  title="Thu nhỏ (-)"
+                >
+                  −
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setZoom(1)}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '999px',
+                    border: '1px solid #BFDBFE',
+                    background: '#EFF6FF',
+                    color: '#1E3A8A',
+                    fontWeight: 700,
+                    fontSize: '0.78rem',
+                    cursor: 'pointer',
+                  }}
+                  title="Đặt lại vừa khít khung nhìn (100%)"
+                >
+                  {Math.round(zoom * 100)}%
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setZoom((z) => Math.min(2.0, Number((z + 0.15).toFixed(2))))}
+                  style={{
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '50%',
+                    border: '1px solid #CBD5E1',
+                    background: '#F8FAFC',
+                    fontWeight: 800,
+                    fontSize: '1rem',
+                    cursor: 'pointer',
+                    lineHeight: 1,
+                  }}
+                  title="Phóng to (+)"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+
             <svg
               ref={svgRef}
               viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}
-              width={Math.round(canvasWidth * zoom)}
-              height={Math.round(canvasHeight * zoom)}
               style={{
                 display: 'block',
+                width: `${Math.round(zoom * 100)}%`,
+                height: 'auto',
+                minWidth: zoom > 1 ? `${Math.round(zoom * 100)}%` : '0',
                 margin: '0 auto',
                 background: '#FFFFFF',
                 borderRadius: '6px',
@@ -1131,11 +1347,11 @@ export default function UmlCanvasStudio({
                 </linearGradient>
               </defs>
 
-              {/* CENTERED SYSTEM BOUNDARY BOX (x = 205..815, leaving clean gutters for Left Actors at x=88 and Right Actors at x=932) */}
+              {/* CENTERED SYSTEM BOUNDARY BOX (x = 195..1065, leaving clean gutters for Left Actors at x=92 and Right Actors at x=1168) */}
               <rect
-                x="205"
+                x="195"
                 y="26"
-                width="610"
+                width="870"
                 height={canvasHeight - 52}
                 rx="4"
                 fill="#FAFAFC"
@@ -1143,15 +1359,15 @@ export default function UmlCanvasStudio({
                 strokeWidth="1.8"
               />
               <line
-                x1="205"
+                x1="195"
                 y1="64"
-                x2="815"
+                x2="1065"
                 y2="64"
                 stroke="#CBD5E1"
                 strokeWidth="1.2"
               />
               <text
-                x="510"
+                x="630"
                 y="43"
                 textAnchor="middle"
                 fill="#64748B"
@@ -1161,7 +1377,7 @@ export default function UmlCanvasStudio({
                 «system»
               </text>
               <text
-                x="510"
+                x="630"
                 y="58"
                 textAnchor="middle"
                 fill="#0F172A"
@@ -1369,7 +1585,7 @@ export default function UmlCanvasStudio({
               style={{
                 width: '100%',
                 borderCollapse: 'collapse',
-                fontSize: '0.88rem',
+                fontSize: `${(0.88 * tableZoom).toFixed(2)}rem`,
                 background: '#FFFFFF',
                 border: '1px solid #E2E8F0',
                 borderRadius: '8px',

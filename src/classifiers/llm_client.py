@@ -21,6 +21,22 @@ INVALID_KEY_MARKERS = (
     "test_key_only",
 )
 
+RETIRED_GROQ_MODELS = {
+    "llama-3.3-70b-versatile",
+    "llama-3.1-70b-versatile",
+    "llama-3.1-8b-instant",
+    "llama3-70b-8192",
+    "llama3-8b-8192",
+    "mixtral-8x7b-32768",
+    "gemma2-9b-it",
+}
+ACTIVE_GROQ_DEFAULT_MODEL = "qwen/qwen3.8-27b"
+GROQ_FALLBACK_POOL = (
+    "qwen/qwen3.8-27b",
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+)
+
 
 def is_ollama_running(host: str = "127.0.0.1", port: int = 11434, timeout: float = 0.25) -> bool:
     """Kiểm tra nhanh xem dịch vụ Ollama cục bộ có đang mở cổng 11434 trên máy hay không."""
@@ -82,8 +98,9 @@ class MultiLLMClient:
             api_key=self.api_key or "unconfigured_key",
             base_url=self.base_url,
             timeout=self.timeout,
-            max_retries=2,
+            max_retries=0,
         )
+        self._groq_call_index = 0
 
     def is_configured(self) -> bool:
         """Kiểm tra xem khóa API thực sự hoặc dịch vụ Ollama đã sẵn sàng hay chưa."""
@@ -93,21 +110,65 @@ class MultiLLMClient:
             return False
         return is_real_api_key(self.api_key)
 
-    def chat_completion(self, system_prompt: str, user_prompt: str, temperature: float = 0.1) -> str:
-        """Gửi truy vấn tới LLM API thật và trả về chuỗi JSON sạch."""
+    def chat_completion(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float = 0.1,
+        max_tokens: int = 750,
+    ) -> str:
+        """Gửi truy vấn tới LLM API thật và trả về chuỗi JSON sạch.
+
+        Hỗ trợ xoay vòng model dự phòng trên Groq khi chạm hạn mức OTPM.
+        """
         if not self.is_configured():
             raise RuntimeError(
                 f"Chưa cấu hình API Key hợp lệ cho cổng '{self.provider}'. "
                 "Vui lòng nhập API Key thực tế để phân tích."
             )
-        response = self.client.chat.completions.create(
-            model=self.model_name,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=temperature,
-            response_format={"type": "json_object"},
-        )
-        content = response.choices[0].message.content or ""
-        return strip_json_fences(content)
+        effective_model = self.model_name
+        if self.provider == "groq" and effective_model in RETIRED_GROQ_MODELS:
+            effective_model = ACTIVE_GROQ_DEFAULT_MODEL
+
+        candidate_models = [effective_model]
+        if self.provider == "groq":
+            pool = list(GROQ_FALLBACK_POOL)
+            if effective_model not in pool:
+                pool.insert(0, effective_model)
+            # Xoay vòng (Round-Robin) qua các model Groq để phân tải đều hạn mức 1000 OTPM / model
+            start_idx = self._groq_call_index % len(pool)
+            self._groq_call_index += 1
+            candidate_models = pool[start_idx:] + pool[:start_idx]
+
+        last_exc: Optional[Exception] = None
+        for model_id in candidate_models:
+            try:
+                kwargs = {
+                    "model": model_id,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    "temperature": temperature,
+                    "response_format": {"type": "json_object"},
+                }
+                if self.provider == "groq" and max_tokens:
+                    kwargs["max_tokens"] = min(max_tokens, 480)
+                response = self.client.chat.completions.create(**kwargs)
+                content = response.choices[0].message.content or ""
+                return strip_json_fences(content)
+            except Exception as exc:
+                last_exc = exc
+                err_str = str(exc).lower()
+                # Nếu gặp lỗi giới hạn token/rate-limit (429 / OTPM / TPM) hoặc model ngừng hỗ trợ
+                # trên Groq -> tự xoay sang model kế tiếp trong pool
+                if self.provider == "groq" and any(
+                    k in err_str
+                    for k in ("429", "rate_limit", "too large", "otpm", "tpm", "decommissioned", "not_found")
+                ):
+                    continue
+                raise
+
+        if last_exc is not None:
+            raise last_exc
+        return ""

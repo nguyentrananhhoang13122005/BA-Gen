@@ -55,8 +55,8 @@ class OfflineMLClassifierStrategy(IClassifierStrategy):
 
     @staticmethod
     def _sigmoid(x: float) -> float:
-        """Hàm sigmoid chuyển đổi điểm biên LinearSVC sang xác suất 0.0 - 1.0."""
-        return 1.0 / (1.0 + math.exp(-x))
+        """Hàm sigmoid chuẩn hóa Platt scaling chuyển điểm biên LinearSVC sang xác suất 0.0 - 1.0."""
+        return 1.0 / (1.0 + math.exp(-x * 2.2))
 
     def _determine_nfr_category(self, text: str) -> str:
         """Gán nhãn phụ NFR chuẩn ISO 25010 theo từ khóa khi chạy ngoại tuyến."""
@@ -93,11 +93,15 @@ class OfflineMLClassifierStrategy(IClassifierStrategy):
             low_s = sentence.lower().strip()
 
             # 1. Nhận diện trực tiếp các dòng NFR hoặc Quy tắc nghiệp vụ (BR-xx) có tiền tố rõ ràng
-            if re.match(r"^(bảo mật dữ liệu|security\b|br-04\b)", low_s):
+            if re.match(r"^(bảo mật dữ liệu|bảo mật\b|security\b|br-04\b)", low_s):
                 req_type, category, confidence = "NFR", "Security", 0.96
             elif re.match(r"^(hiệu năng|performance\b)", low_s):
                 req_type, category, confidence = "NFR", "Performance", 0.96
-            elif re.match(r"^(khả năng tương thích|compatibility\b|portability\b)", low_s):
+            elif re.match(r"^(giao diện phần mềm|tính khả dụng|khả dụng\b|usability\b)", low_s):
+                req_type, category, confidence = "NFR", "Usability", 0.95
+            elif re.match(r"^(độ tin cậy|reliability\b|hệ thống phải duy trì)", low_s):
+                req_type, category, confidence = "NFR", "Reliability", 0.96
+            elif re.match(r"^(khả năng tương thích|tương thích\b|compatibility\b|portability\b)", low_s):
                 req_type, category, confidence = "NFR", "Portability", 0.96
             elif re.match(r"^br-\d+\b", low_s):
                 req_type, category, confidence = "NFR", "Reliability", 0.92
@@ -117,11 +121,15 @@ class OfflineMLClassifierStrategy(IClassifierStrategy):
                 if has_fr_verb and not has_nfr_kw:
                     req_type = "FR"
                     category = None
-                    confidence = max(round(1.0 - prob_nfr, 2), 0.85)
+                    confidence = max(round(1.0 - prob_nfr, 2), 0.88)
+                elif has_nfr_kw and not has_fr_verb:
+                    req_type = "NFR"
+                    category = self._determine_nfr_category(sentence)
+                    confidence = max(round(prob_nfr, 2), 0.88)
                 elif prob_nfr >= 0.50:
                     req_type = "NFR"
                     category = self._determine_nfr_category(sentence)
-                    confidence = round(prob_nfr, 2)
+                    confidence = max(round(prob_nfr, 2), 0.85 if has_nfr_kw else round(prob_nfr, 2))
                 else:
                     req_type = "FR"
                     category = None

@@ -217,8 +217,8 @@ class RequirementSegmenter:
             r"ĐẶC\s+TẢ\s+YÊU\s+CẦU\s+CHỨC\s+NĂNG|QUY\s+TẮC\s+NGHIỆP\s+VỤ\s+CỐT\s+LÕI|"
             r"YÊU\s+CẦU\s+PHI\s+CHỨC\s+NĂNG|Mục\s+tiêu\s+chính\s*\(|"
             r"Phạm\s+vi\s+hệ\s+thống\s*\(|Trong\s+phạm\s+vi\s*\(In-Scope\)|"
-            r"Ngoài\s+phạm\s+vi\s*\(Out-of-Scope\)|"
-            r"Phiên\s+bản\s*:\s*\d|Vai\s+trò\s*\(Role\)\s*[—\-]|Mã\s+FR\s*[—\-])",
+            r"Outside\s+Scope\s*\(Out-of-Scope\)|Ngoài\s+phạm\s+vi\s*\(Out-of-Scope\)|"
+            r"Phiên\s+bản\s*:\s*\d|Mã\s+dự\s+án\s*:|Vai\s+trò\s*\(Role\)\s*[—\-]|Mã\s+FR\s*[—\-])",
             flags=re.IGNORECASE,
         )
 
